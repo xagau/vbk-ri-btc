@@ -1,4 +1,4 @@
-name: Fast CI
+name: CI
 
 on:
   pull_request:
@@ -7,7 +7,58 @@ on:
     - develop
 
 jobs:
-  build:
+  asan:
+    runs-on: ubuntu-latest
+    container: veriblock/btcdev
+    env:
+      CC: gcc
+      CXX: g++
+    steps:
+      - uses: actions/checkout@v1
+        with:
+          submodules: true
+      - name: autogen
+        run: ./autogen.sh
+      - name: configure
+        run: ./configure
+          --without-gui
+          --enable-werror
+          --with-sanitizers=address
+          --disable-bench
+      - name: make
+        run: make -j2
+      - name: make check
+        timeout-minutes: 10
+        run: make check
+
+
+  coverage:
+    runs-on: ubuntu-latest
+    container: veriblock/btcdev
+    env:
+      CC: gcc
+      CXX: g++
+    steps:
+      - uses: actions/checkout@v1
+        with:
+          submodules: true
+      - name: autogen
+        run: ./autogen.sh
+      - name: configure
+        run: ./configure
+          --without-gui
+          --enable-werror
+          --use-sanitizers=thread
+          --disable-bench
+
+      - name: make
+        run: make -j2
+      - name: make check
+        timeout-minutes: 10
+        run: make check
+
+
+  coverage:
     runs-on: ubuntu-latest
     container: veriblock/btcdev
     env:
