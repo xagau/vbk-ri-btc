@@ -12,7 +12,7 @@ jobs:
       fail-fast: true
       matrix:
         sanitizer: [thread, address]
-    runs-on: [self-hosted, linux]
+    runs-on: ubuntu-latest
     env:
       CC: clang
       CXX: clang++
