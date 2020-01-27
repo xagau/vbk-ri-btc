@@ -8,6 +8,7 @@ on:
 
 jobs:
   sanitizer:
+    container: veriblock/btcdev
     strategy:
       fail-fast: true
       matrix:
@@ -34,7 +35,8 @@ jobs:
         run: make check
 
   coverage:
-    runs-on: [self-hosted, linux]
+    container: veriblock/btcdev
+    runs-on: ubuntu-latest
     env:
       CC: gcc
       CXX: g++
