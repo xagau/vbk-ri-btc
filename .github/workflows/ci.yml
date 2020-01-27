@@ -7,9 +7,12 @@ on:
     - develop
 
 jobs:
-  asan:
-    runs-on: ubuntu-latest
-    container: veriblock/btcdev
+  sanitizer:
+    strategy:
+      fail-fast: true
+      matrix:
+        sanitizer: [thread, address]
+    runs-on: [self-hosted, linux]
     env:
       CC: clang
       CXX: clang++
@@ -23,42 +26,15 @@ jobs:
         run: ./configure
           --without-gui
           --enable-werror
-          --with-sanitizers=address
+          --with-sanitizers=${{ matrix.sanitizer }}
       - name: make
         run: make -j2
       - name: make check
         timeout-minutes: 10
         run: make check
-
-
-  thread:
-    runs-on: ubuntu-latest
-    container: veriblock/btcdev
-    env:
-      CC: clang
-      CXX: clang++
-    steps:
-      - uses: actions/checkout@v1
-        with:
-          submodules: true
-      - name: autogen
-        run: ./autogen.sh
-      - name: configure
-        run: ./configure
-          --without-gui
-          --enable-werror
-          --use-sanitizers=thread
-
-      - name: make
-        run: make -j2
-      - name: make check
-        timeout-minutes: 10
-        run: make check
-
 
   coverage:
-    runs-on: ubuntu-latest
-    container: veriblock/btcdev
+    runs-on: [self-hosted, linux]
     env:
       CC: gcc
       CXX: g++
