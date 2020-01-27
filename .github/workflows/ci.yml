@@ -65,3 +65,7 @@ jobs:
         gcovr --xml cov.xml -j2 -v -s -b -r src
     - name: Run sonarqube
       run: sonar-scanner -Dsonar.login=${{ secrets.SONAR_TOKEN }}
+    - name: Run codecov
+      run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}
+
+
