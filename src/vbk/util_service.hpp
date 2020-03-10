@@ -51,6 +51,14 @@ struct UtilService {
      * @return true, if script is valid, false otherwise.
      */
     virtual bool EvalScript(const CScript& script, std::vector<std::vector<unsigned char>>& stack, ScriptError* serror, Publications* pub, Context* ctx, PopTxType* type, bool with_checks) = 0;
+
+    /**
+     * Check if the given chain is a viable candidate for the best chain
+     *
+     * @param tip[in] the candidate chain tip block
+     * @return false, if the chain stands no chance to have a greater pop score than the current best chain, true otherwise
+     */
+    virtual bool shouldDownloadChain(const CBlockIndex& tip) = 0;
 };
 
 } // namespace VeriBlock

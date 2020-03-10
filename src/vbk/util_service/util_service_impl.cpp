@@ -283,4 +283,12 @@ bool UtilServiceImpl::EvalScript(const CScript& script, std::vector<std::vector<
     return EvalScriptImpl(script, stack, serror, publications, context, type, with_checks);
 }
 
+bool UtilServiceImpl::shouldDownloadChain(const CBlockIndex& tip)
+{
+    // TODO: attempt to not download chains that stand no chance
+    // to end up with a higher pop score than the current best chain
+
+    return true;
+}
+
 } // namespace VeriBlock

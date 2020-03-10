@@ -36,6 +36,7 @@ struct UtilServiceImpl : public UtilService {
     bool validatePopTxInput(const CTxIn& in, TxValidationState& state);
     bool validatePopTxOutput(const CTxOut& in, TxValidationState& state);
 
+    bool shouldDownloadChain(const CBlockIndex& tip) override;
 
 protected:
     const CBlockIndex* FindCommonKeystone(const CBlockIndex* leftFork, const CBlockIndex* rightFork);
