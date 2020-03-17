@@ -22,29 +22,47 @@
 #include <vbk/util.hpp>
 #include <vbk/util_service.hpp>
 
-using grpc::Channel;
-using grpc::ClientContext;
-using grpc::Status;
+#include <veriblock/alt-util.hpp>
 
 namespace {
 
-void BlockToProtoAltChainBlock(const CBlockIndex& blockIndex, VeriBlock::AltChainBlock& protoBlock)
+VeriBlock::AltBlock cast(int nHeight, const CBlockHeader& block)
 {
-    auto* blockIndex1 = new VeriBlock::BlockIndex();
-    blockIndex1->set_hash(blockIndex.GetBlockHash().ToString());
-    blockIndex1->set_height(blockIndex.nHeight);
-    protoBlock.set_allocated_blockindex(blockIndex1);
-    protoBlock.set_timestamp(blockIndex.nTime);
+    VeriBlock::AltBlock alt;
+    alt.height = nHeight;
+    alt.timestamp = block.nTime;
+    auto hash = block.GetBlockHash();
+    alt.hash = std::vector<uint8_t>{hash.begin(), hash.end()};
+    return alt;
 }
 
-void BlockToProtoAltChainBlock(const CBlockHeader& block, const int& nHeight, VeriBlock::AltChainBlock& protoBlock)
+CBlock headerFromBytes(const std::vector<uint8_t>& v)
 {
-    auto* blockIndex1 = new VeriBlock::BlockIndex();
-    blockIndex1->set_hash(block.GetHash().ToString());
-    blockIndex1->set_height(nHeight);
-    protoBlock.set_allocated_blockindex(blockIndex1);
-    protoBlock.set_timestamp(block.nTime);
+    CDataStream stream(v, SER_NETWORK, PROTOCOL_VERSION);
+    CBlockHeader header;
+    stream >> header;
+    return header;
 }
+
+VeriBlock::Payloads cast(const Publications& publications)
+{
+    VeriBlock::AltProof altproof;
+    altproof.atv = VeriBlock::ATV::fromVbkEncoding(publications.atv);
+    altproof.containing = cast(prev.nHeight + 1, connecting);
+
+    CBlock endorsed = headerFromBytes(altproof.atv.transaction.publicationData.header);
+    auto* index = LookupBlockIndex(endorsed.GetHash());
+    assert(index != nullptr);
+    altproof.endorsed = cast(index->nHeight, index->GetBlockHeader());
+
+    VeriBlock::Payloads payloads;
+    payloads.alt = altproof;
+
+    std::transform(publications.vtbs.begin(), publications.vtbs.end(), std::back_inserter(payloads.vtbs), [](const std::vector<uint8_t>& v) {
+        return VeriBlock::VTB::fromVbkEncoding(v);
+    });
+}
+
 
 inline uint32_t getReservedBlockIndexBegin(const VeriBlock::Config& config)
 {
@@ -66,33 +84,12 @@ inline std::string heightToHash(uint32_t height)
 
 namespace VeriBlock {
 
-PopServiceImpl::PopServiceImpl(bool altautoconfig, bool doinit)
+PopServiceImpl::PopServiceImpl(bool doinit) : pop(btc_param, vbk_param, btc_e_repo, vbk_e_repo, alt_param)
 {
     // for mocking purposes
     if (!doinit) return;
 
     auto& config = VeriBlock::getService<VeriBlock::Config>();
-    std::string ip = config.service_ip;
-    std::string port = config.service_port;
-
-    LogPrintf("Connecting to alt-service at %s:%s... \n", ip.c_str(), port.c_str());
-    auto creds = grpc::InsecureChannelCredentials();
-    std::shared_ptr<Channel> channel = grpc::CreateChannel(ip + ":" + port, creds);
-
-    grpcPopService = VeriBlock::GrpcPopService::NewStub(channel);
-
-    std::chrono::system_clock::time_point deadline =
-        std::chrono::system_clock::now() + std::chrono::seconds(5);
-    gpr_timespec time;
-    grpc::Timepoint2Timespec(deadline, &time);
-
-    if (!channel->WaitForConnected(time)) {
-        LogPrintf("Alt-service is not working, please run the alt-service before you start the daemon \n");
-        LogPrintf("-------------------------------------------------------------------------------------------------\n");
-        StartShutdown();
-    } else if (altautoconfig) {
-        setConfig();
-    }
 
     assert(getReservedBlockIndexBegin(config) <= getReservedBlockIndexEnd(config) && "oh no, programming error");
     temporaryPayloadsIndex = getReservedBlockIndexEnd(config);
@@ -106,257 +103,108 @@ void initTemporaryPayloadsMock(PopServiceImpl& pop)
     pop.temporaryPayloadsIndex = getReservedBlockIndexBegin(config);
 }
 
-void PopServiceImpl::addPayloads(std::string blockHash, const int& nHeight, const Publications& publications)
+void PopServiceImpl::connectPayloads(const CBlockIndex& prev, const CBlock& connecting)
 {
     std::lock_guard<std::mutex> lock(mutex);
-    AddPayloadsDataRequest request;
-    EmptyReply reply;
-    ClientContext context;
 
-    auto* blockInfo = new BlockIndex();
-    blockInfo->set_height(nHeight);
-    blockInfo->set_hash(blockHash);
-
-    request.set_allocated_blockindex(blockInfo);
-
-    for (const auto& vtb : publications.vtbs) {
-        std::string* pub = request.add_veriblockpublications();
-        *pub = std::string(vtb.begin(), vtb.end());
-    }
-    std::string* pub = request.add_altpublications();
-    *pub = std::string(publications.atv.begin(), publications.atv.end());
-
-    Status status = grpcPopService->AddPayloads(&context, request, &reply);
-    if (!status.ok()) {
-        throw PopServiceException(status);
-    }
-}
-
-void PopServiceImpl::addPayloads(const CBlockIndex & blockIndex, const CBlock & block)
-{
-    std::lock_guard<std::mutex> lock(mutex);
-    AddPayloadsDataRequest request;
-
-    auto* index = new BlockIndex();
-    index->set_height(blockIndex.nHeight);
-    index->set_hash(blockIndex.GetBlockHash().ToString());
-    request.set_allocated_blockindex(index);
-
-    for (const auto & tx : block.vtx) {
+    VeriBlock::ValidationState state;
+    for (const auto& tx : connecting.vtx) {
         if (!isPopTx(*tx)) {
             continue;
         }
 
         Publications publications;
+        Context context;
         PopTxType type;
         ScriptError serror;
-        assert(parsePopTx(tx, &serror, &publications, nullptr, &type) && "scriptSig of pop tx is invalid in addPayloads");
+        bool ret = parsePopTx(tx, &serror, &publications, &context, &type);
+        assert(ret && "scriptSig of pop tx is invalid in addPayloads");
 
-        // skip non-publication transactions
-        if (type != PopTxType::PUBLICATIONS) {
-            continue;
+        switch (type) {
+        case PopTxType::CONTEXT: {
+            bool ret = this->updateContext(context.vbk, context.btc, state);
+            assert(ret); // we expect that payloads are correct here
+            assert(state.IsValid());
+            break;
+        }
+        case PopTxType::PUBLICATIONS: {
+            VeriBlock::Payloads payloads = cast(publications);
+            bool ret = pop.addPayloads(payloads, state);
+            assert(ret); // we expect that payloads are correct here
+            assert(state.IsValid());
+            break;
         }
 
-        // insert payloads
-        request.add_altpublications(publications.atv.data(), publications.atv.size());
-        for (const auto& vtb : publications.vtbs) {
-            request.add_veriblockpublications(vtb.data(), vtb.size());
+        default: {
+            break;
         }
-    }
-
-    EmptyReply reply;
-    ClientContext context;
-    Status status = grpcPopService->AddPayloads(&context, request, &reply);
-    if (!status.ok()) {
-        throw PopServiceException(status);
+        }
     }
 }
 
-void PopServiceImpl::removePayloads(const CBlockIndex & block)
+void PopServiceImpl::removePayloads(const CBlockIndex& block)
 {
-    removePayloads(block.GetBlockHash().ToString(), block.nHeight);
+    //
 }
 
-void PopServiceImpl::removePayloads(std::string blockHash, const int& nHeight)
-{
-    std::lock_guard<std::mutex> lock(mutex);
-    EmptyReply reply;
-    ClientContext context;
-    RemovePayloadsRequest request;
-
-    auto* blockInfo = new BlockIndex();
-    blockInfo->set_height(nHeight);
-    blockInfo->set_hash(blockHash);
-
-    request.set_allocated_blockindex(blockInfo);
-
-    Status status = grpcPopService->RemovePayloads(&context, request, &reply);
-    if (!status.ok()) {
-        throw PopServiceException(status);
-    }
-}
-
-void PopServiceImpl::savePopTxToDatabase(const CBlock& block, const int& nHeight)
-{
-    std::lock_guard<std::mutex> lock(mutex);
-    SaveBlockPopTxRequest request;
-    EmptyReply reply;
-
-    auto* b1 = new AltChainBlock();
-    BlockToProtoAltChainBlock(block, nHeight, *b1);
-    request.set_allocated_containingblock(b1);
-
-    for (const auto& tx : block.vtx) {
-        if (!isPopTx(*tx)) {
-            continue;
-        }
-
-        PopTxData* popTxData = request.add_popdata();
-
-        Publications publications;
-        PopTxType type;
-        ScriptError serror;
-        assert(parsePopTx(tx, &serror, &publications, nullptr, &type) && "scriptSig of pop tx is invalid in savePopTxToDatabase");
-
-        // skip all non-publications txes
-        if (type != PopTxType::PUBLICATIONS) {
-            continue;
-        }
-
-        // Fill the proto objects with pop data
-        popTxData->set_poptxhash(tx->GetHash().ToString());
-        popTxData->set_altpublication(publications.atv.data(), publications.atv.size());
-
-        PublicationData publicationData;
-        getPublicationsData(publications, publicationData);
-
-        CDataStream stream(std::vector<unsigned char>(publicationData.header().begin(), publicationData.header().end()), SER_NETWORK, PROTOCOL_VERSION);
-        CBlockHeader endorsedBlock;
-        stream >> endorsedBlock;
-
-        CBlockIndex* endorsedBlockIndex;
-        {
-            LOCK(cs_main);
-            endorsedBlockIndex = LookupBlockIndex(endorsedBlock.GetHash());
-        }
-
-        auto* b2 = new AltChainBlock();
-        BlockToProtoAltChainBlock(endorsedBlock, endorsedBlockIndex->nHeight, *b2);
-        popTxData->set_allocated_endorsedblock(b2);
-
-        for (const auto& vtb : publications.vtbs) {
-            popTxData->add_veriblockpublications(vtb.data(), vtb.size());
-        }
-    }
-
-    if (request.popdata_size() != 0) {
-        // then, save pop txes to database
-        {
-            ClientContext context;
-            Status status = grpcPopService->SaveBlockPopTxToDatabase(&context, request, &reply);
-            if (!status.ok()) {
-                throw PopServiceException(status);
-            }
-        }
-    }
-}
 
 std::vector<BlockBytes> PopServiceImpl::getLastKnownVBKBlocks(size_t blocks)
 {
-    GetLastKnownBlocksRequest request;
-    request.set_maxblockcount(blocks);
-    GetLastKnownBlocksReply reply;
-    ClientContext context;
-
-    Status status = grpcPopService->GetLastKnownVBKBlocks(&context, request, &reply);
-    if (!status.ok()) {
-        throw PopServiceException(status);
-    }
-
-    std::vector<BlockBytes> result;
-
-    result.resize(reply.blocks_size());
-    for (size_t i = 0, size = reply.blocks_size(); i < size; i++) {
-        auto& block = reply.blocks(i);
-        result[i] = std::vector<uint8_t>{block.begin(), block.end()};
-    }
-
-    return result;
+    std::lock_guard<std::mutex> lock(mutex);
+    return getLastKnownBlocks(pop.vbk(), blocks);
 }
 
 std::vector<BlockBytes> PopServiceImpl::getLastKnownBTCBlocks(size_t blocks)
 {
-    GetLastKnownBlocksRequest request;
-    request.set_maxblockcount(blocks);
-    GetLastKnownBlocksReply reply;
-    ClientContext context;
-
-    Status status = grpcPopService->GetLastKnownBTCBlocks(&context, request, &reply);
-    if (!status.ok()) {
-        throw PopServiceException(status);
-    }
-
-    std::vector<BlockBytes> result;
-
-    result.resize(reply.blocks_size());
-    for (size_t i = 0, size = reply.blocks_size(); i < size; i++) {
-        auto& block = reply.blocks(i);
-        result[i] = std::vector<uint8_t>{block.begin(), block.end()};
-    }
-    return result;
+    std::lock_guard<std::mutex> lock(mutex);
+    return getLastKnownBlocks(pop.btc(), blocks);
 }
 
 bool PopServiceImpl::checkVTBinternally(const std::vector<uint8_t>& bytes)
 {
-    VeriBlock::BytesArrayRequest request;
-    request.set_data(bytes.data(), bytes.size());
+    try {
+        auto vtb = VeriBlock::VTB::fromVbkEncoding(bytes);
+        VeriBlock::ValidationState state;
 
-    CheckReply reply;
-    ClientContext context;
-
-    Status status = grpcPopService->CheckVTBInternally(&context, request, &reply);
-    if (!status.ok()) {
-        throw PopServiceException(status);
+        return VeriBlock::checkVTB(vtb, state, *vbk_param, *btc_param);
+    } catch (...) {
+        return false;
     }
-
-    return reply.result();
 }
 
 bool PopServiceImpl::checkATVinternally(const std::vector<uint8_t>& bytes)
 {
-    VeriBlock::BytesArrayRequest request;
-    request.set_data(bytes.data(), bytes.size());
-
-    CheckReply reply;
-    ClientContext context;
-
-    Status status = grpcPopService->CheckATVInternally(&context, request, &reply);
-    if (!status.ok()) {
-        throw PopServiceException(status);
+    try {
+        auto atv = VeriBlock::ATV::fromVbkEncoding(bytes);
+        VeriBlock::ValidationState state;
+        return VeriBlock::checkATV(atv, state, *vbk_param);
+    } catch (...) {
+        return false;
     }
-
-    return reply.result();
 }
 
-void PopServiceImpl::updateContext(const std::vector<std::vector<uint8_t>>& veriBlockBlocks, const std::vector<std::vector<uint8_t>>& bitcoinBlocks)
+bool PopServiceImpl::updateContext(const std::vector<std::vector<uint8_t>>& veriBlockBlocks, const std::vector<std::vector<uint8_t>>& bitcoinBlocks, TxValidationState& state)
 {
-    std::lock_guard<std::mutex> lock(mutex);
-    UpdateContextRequest request;
-    EmptyReply reply;
-    ClientContext context;
-
-    for (const auto& bitcoin_block : bitcoinBlocks) {
-        request.add_bitcoinblocks(bitcoin_block.data(), bitcoin_block.size());
+    VeriBlock::ValidationState instate;
+    // apply BTC blocks
+    if (!VeriBlock::addBlocks(pop.getPopManager().btc(), bitcoinBlocks, instate)) {
+        return state.Invalid(
+            TxValidationResult::TX_BAD_POP_DATA,
+            instate.GetRejectReason(),
+            strprintf("BTC context is invalid: %s",
+                instate.GetDebugMessage()));
     }
 
-    for (const auto& veriblock_block : veriBlockBlocks) {
-        request.add_veriblockblocks(veriblock_block.data(), veriblock_block.size());
+    // apply VBK blocks
+    if (!VeriBlock::addBlocks(pop.getPopManager().vbk(), veriBlockBlocks, instate)) {
+        return state.Invalid(
+            TxValidationResult::TX_BAD_POP_DATA,
+            instate.GetRejectReason(),
+            strprintf("VBK context is invalid: %s",
+                instate.GetDebugMessage()));
     }
 
-    Status status = grpcPopService->UpdateContext(&context, request, &reply);
-    if (!status.ok()) {
-        throw PopServiceException(status);
-    }
+    return true;
 }
 
 // Forkresolution
@@ -400,78 +248,13 @@ int PopServiceImpl::compareTwoBranches(const CBlockIndex* commonKeystone, const 
 void PopServiceImpl::rewardsCalculateOutputs(const int& blockHeight, const CBlockIndex& endorsedBlock, const CBlockIndex& contaningBlocksTip, const CBlockIndex* difficulty_start_interval, const CBlockIndex* difficulty_end_interval, std::map<CScript, int64_t>& outputs)
 {
     std::lock_guard<std::mutex> lock(mutex);
-    RewardsCalculateRequest request;
-    RewardsCalculateReply reply;
-    ClientContext context;
-
-    const CBlockIndex* workingBlock = &contaningBlocksTip;
-
-    while (workingBlock != &endorsedBlock) {
-        AltChainBlock* b = request.add_endorsmentblocks();
-        ::BlockToProtoAltChainBlock(*workingBlock, *b);
-        workingBlock = workingBlock->pprev;
-    }
-
-    workingBlock = difficulty_end_interval;
-
-    CBlockIndex* pprev_difficulty_start_interval = difficulty_start_interval != nullptr ? difficulty_start_interval->pprev : nullptr;
-
-    while (workingBlock != pprev_difficulty_start_interval) // including the start_interval block
-    {
-        AltChainBlock* b = request.add_difficultyblocks();
-        ::BlockToProtoAltChainBlock(*workingBlock, *b);
-        workingBlock = workingBlock->pprev;
-    }
-
-    auto* b = new AltChainBlock();
-    ::BlockToProtoAltChainBlock(endorsedBlock, *b);
-
-    request.set_allocated_endorsedblock(b);
-    request.set_blockaltheight(blockHeight);
-
-    Status status = grpcPopService->RewardsCalculateOutputs(&context, request, &reply);
-    if (!status.ok()) {
-        throw PopServiceException(status);
-    }
-
-    for (int i = 0, size = reply.outputs_size(); i < size; ++i) {
-        const VeriBlock::RewardOutput& output = reply.outputs(i);
-        std::vector<unsigned char> payout_bytes(output.payoutinfo().begin(), output.payoutinfo().end());
-        CScript script(payout_bytes.begin(), payout_bytes.end());
-
-        try {
-            int64_t amount = std::stoll(output.reward());
-            if (MoneyRange(amount)) {
-                outputs[script] = amount;
-            } else {
-                outputs[script] = MAX_MONEY;
-            }
-        } catch (const std::invalid_argument&) {
-            throw VeriBlock::PopServiceException("cannot convert the value received from the service");
-        } catch (const std::out_of_range&) {
-            outputs[script] = MAX_MONEY;
-        }
-    }
+    // TODO: implement
 }
 
 bool PopServiceImpl::parsePopTx(const CTransactionRef& tx, ScriptError* serror, Publications* pub, Context* ctx, PopTxType* type)
 {
     std::vector<std::vector<uint8_t>> stack;
     return getService<UtilService>().EvalScript(tx->vin[0].scriptSig, stack, serror, pub, ctx, type, false);
-}
-
-void PopServiceImpl::getPublicationsData(const Publications& data, PublicationData& pub)
-{
-    ClientContext context;
-    BytesArrayRequest request;
-
-    request.set_data(data.atv.data(), data.atv.size());
-
-    Status status = grpcPopService->GetPublicationDataFromAltPublication(&context, request, &pub);
-
-    if (!status.ok()) {
-        throw PopServiceException(status);
-    }
 }
 
 bool PopServiceImpl::determineATVPlausibilityWithBTCRules(AltchainId altChainIdentifier, const CBlockHeader& popEndorsementHeader, const Consensus::Params& params, TxValidationState& state)
@@ -493,90 +276,6 @@ bool PopServiceImpl::determineATVPlausibilityWithBTCRules(AltchainId altChainIde
     return true;
 }
 
-void PopServiceImpl::setConfig()
-{
-    std::lock_guard<std::mutex> lock(mutex);
-    auto& config = getService<Config>();
-
-    ClientContext context;
-    SetConfigRequest request;
-    EmptyReply reply;
-
-    //AltChainConfig
-    auto* altChainConfig = new AltChainConfigRequest();
-    altChainConfig->set_keystoneinterval(config.keystone_interval);
-
-    // CalculatorConfig
-    auto* calculatorConfig = new CalculatorConfig();
-    calculatorConfig->set_basicreward(std::to_string(COIN));
-    calculatorConfig->set_payoutrounds(config.payoutRounds);
-    calculatorConfig->set_keystoneround(config.keystoneRound);
-
-    auto* roundRatioConfig = new RoundRatioConfig();
-    for (const auto& roundRatio : config.roundRatios) {
-        std::string* round = roundRatioConfig->add_roundratio();
-        *round = roundRatio;
-    }
-    calculatorConfig->set_allocated_roundratios(roundRatioConfig);
-
-    auto* rewardCurveConfig = new RewardCurveConfig();
-    rewardCurveConfig->set_startofdecreasingline(config.startOfDecreasingLine);
-    rewardCurveConfig->set_widthofdecreasinglinenormal(config.widthOfDecreasingLineNormal);
-    rewardCurveConfig->set_widthofdecreasinglinekeystone(config.widthOfDecreasingLineKeystone);
-    rewardCurveConfig->set_aboveintendedpayoutmultipliernormal(config.aboveIntendedPayoutMultiplierNormal);
-    rewardCurveConfig->set_aboveintendedpayoutmultiplierkeystone(config.aboveIntendedPayoutMultiplierKeystone);
-    calculatorConfig->set_allocated_rewardcurve(rewardCurveConfig);
-
-    calculatorConfig->set_maxrewardthresholdnormal(config.maxRewardThresholdNormal);
-    calculatorConfig->set_maxrewardthresholdkeystone(config.maxRewardThresholdKeystone);
-
-    auto* relativeScoreConfig = new RelativeScoreConfig();
-    for (const auto& i : config.relativeScoreLookupTable) {
-        relativeScoreConfig->add_score(i);
-    }
-    calculatorConfig->set_allocated_relativescorelookuptable(relativeScoreConfig);
-
-    auto* flatScoreRoundConfig = new FlatScoreRoundConfig();
-    flatScoreRoundConfig->set_round(config.flatScoreRound);
-    flatScoreRoundConfig->set_active(config.flatScoreRoundUse);
-    calculatorConfig->set_allocated_flatscoreround(flatScoreRoundConfig);
-
-    calculatorConfig->set_popdifficultyaveraginginterval(config.POP_DIFFICULTY_AVERAGING_INTERVAL);
-    calculatorConfig->set_poprewardsettlementinterval(config.POP_REWARD_SETTLEMENT_INTERVAL);
-
-    //ForkresolutionConfig
-    auto* forkresolutionConfig = new ForkresolutionConfigRequest();
-    forkresolutionConfig->set_keystonefinalitydelay(config.keystone_finality_delay);
-    forkresolutionConfig->set_amnestyperiod(config.amnesty_period);
-
-    //VeriBlockBootstrapConfig
-    auto* veriBlockBootstrapBlocks = new VeriBlockBootstrapConfig();
-    for (const auto& bootstrap_veriblock_block : config.bootstrap_veriblock_blocks) {
-        std::vector<uint8_t> bytes = ParseHex(bootstrap_veriblock_block);
-        veriBlockBootstrapBlocks->add_blocks(bytes.data(), bytes.size());
-    }
-
-    //BitcoinBootstrapConfig
-    auto* bitcoinBootstrapBlocks = new BitcoinBootstrapConfig();
-    for (const auto& bootstrap_bitcoin_block : config.bootstrap_bitcoin_blocks) {
-        std::vector<uint8_t> bytes = ParseHex(bootstrap_bitcoin_block);
-        bitcoinBootstrapBlocks->add_blocks(bytes.data(), bytes.size());
-    }
-    bitcoinBootstrapBlocks->set_firstblockheight(config.bitcoin_first_block_height);
-
-    request.set_allocated_altchainconfig(altChainConfig);
-    request.set_allocated_calculatorconfig(calculatorConfig);
-    request.set_allocated_forkresolutionconfig(forkresolutionConfig);
-    request.set_allocated_veriblockbootstrapconfig(veriBlockBootstrapBlocks);
-    request.set_allocated_bitcoinbootstrapconfig(bitcoinBootstrapBlocks);
-
-    Status status = grpcPopService->SetConfig(&context, request, &reply);
-
-    if (!status.ok()) {
-        throw PopServiceException(status);
-    }
-}
-
 bool PopServiceImpl::addTemporaryPayloads(const CTransactionRef& tx, const CBlockIndex& pindexPrev, const Consensus::Params& params, TxValidationState& state)
 {
     return addTemporaryPayloadsImpl(*this, tx, pindexPrev, params, state);
@@ -584,7 +283,8 @@ bool PopServiceImpl::addTemporaryPayloads(const CTransactionRef& tx, const CBloc
 
 bool addTemporaryPayloadsImpl(PopServiceImpl& pop, const CTransactionRef& tx, const CBlockIndex& pindexPrev, const Consensus::Params& params, TxValidationState& state)
 {
-    if (pop.temporaryPayloadsIndex >= getReservedBlockIndexEnd(VeriBlock::getService<VeriBlock::Config>())) {
+    auto& config = VeriBlock::getService<VeriBlock::Config>();
+    if (pop.temporaryPayloadsIndex >= getReservedBlockIndexEnd(config)) {
         return state.Invalid(TxValidationResult::TX_BAD_POP_DATA, "pop-block-num-pop-tx", "too many pop transactions in a block");
     }
 
@@ -630,6 +330,7 @@ bool txPopValidation(PopServiceImpl& pop, const CTransactionRef& tx, const CBloc
     Publications publications;
     ScriptError serror = ScriptError::SCRIPT_ERR_UNKNOWN_ERROR;
     Context context;
+    VeriBlock::ValidationState instate;
     PopTxType type = PopTxType::UNKNOWN;
     if (!pop.parsePopTx(tx, &serror, &publications, &context, &type)) {
         return state.Invalid(TxValidationResult::TX_BAD_POP_DATA, "pop-tx-invalid-script", strprintf("[%s] scriptSig of POP tx is invalid: %s", tx->GetHash().ToString(), ScriptErrorString(serror)));
@@ -638,8 +339,13 @@ bool txPopValidation(PopServiceImpl& pop, const CTransactionRef& tx, const CBloc
     switch (type) {
     case PopTxType::CONTEXT: {
         try {
-            pop.updateContext(context.vbk, context.btc);
-        } catch (const PopServiceException& e) {
+            if (!this->updateContext(context.vbk, context.btc, state)) {
+                return state.Invalid(
+                    TxValidationResult::TX_BAD_POP_DATA,
+                    "pop-tx-updatecontext-failed",
+                    strprintf("[%s] updatecontext failed: %s", tx->GetHash().ToString(), state.GetDebugMessage()));
+            }
+        } catch (const std::exception& e) {
             return state.Invalid(TxValidationResult::TX_BAD_POP_DATA, "pop-tx-updatecontext-failed", strprintf("[%s] updatecontext failed: %s", tx->GetHash().ToString(), e.what()));
         }
         break;
@@ -649,11 +355,10 @@ bool txPopValidation(PopServiceImpl& pop, const CTransactionRef& tx, const CBloc
         PublicationData popEndorsement;
         pop.getPublicationsData(publications, popEndorsement);
 
-        CDataStream stream(std::vector<unsigned char>(popEndorsement.header().begin(), popEndorsement.header().end()), SER_NETWORK, PROTOCOL_VERSION);
         CBlockHeader popEndorsementHeader;
 
         try {
-            stream >> popEndorsementHeader;
+            popEndorsementHeader = headerFromBytes(popEndorsement.header);
         } catch (const std::exception& e) {
             return state.Invalid(TxValidationResult::TX_BAD_POP_DATA, "pop-tx-alt-block-invalid", strprintf("[%s] can't deserialize endorsed block header: %s", tx->GetHash().ToString(), e.what()));
         }
@@ -684,9 +389,25 @@ bool txPopValidation(PopServiceImpl& pop, const CTransactionRef& tx, const CBloc
         }
 
         try {
-            pop.addPayloads(heightToHash(heightIndex), heightIndex, publications);
+            VeriBlock::Payloads payloads = cast(publications);
+            if (!pop.getPopManager().addPayloads(payloads, state)) {
+                return state.Invalid(
+                    TxValidationResult::TX_BAD_POP_DATA,
+                    "pop-tx-add-payloads-failed",
+                    strprintf(
+                        "[%s] addPayloads failed: %s, %s",
+                        tx->GetHash().ToString(),
+                        state.GetRejectReason(),
+                        state.GetDebugMessage()));
+            }
         } catch (const PopServiceException& e) {
-            return state.Invalid(TxValidationResult::TX_BAD_POP_DATA, "pop-tx-add-payloads-failed", strprintf("[%s] addPayloads failed: %s", tx->GetHash().ToString(), e.what()));
+            return state.Invalid(
+                TxValidationResult::TX_BAD_POP_DATA,
+                "pop-tx-add-payloads-failed",
+                strprintf(
+                    "[%s] addPayloads failed: %s",
+                    tx->GetHash().ToString(),
+                    e.what()));
         }
         break;
     }
@@ -736,5 +457,11 @@ bool blockPopValidationImpl(PopServiceImpl& pop, const CBlock& block, const CBlo
 bool PopServiceImpl::blockPopValidation(const CBlock& block, const CBlockIndex& pindexPrev, const Consensus::Params& params, BlockValidationState& state) EXCLUSIVE_LOCKS_REQUIRED(cs_main)
 {
     return blockPopValidationImpl(*this, block, pindexPrev, params, state);
+}
+
+void PopServiceImpl::getPublicationsData(const Publications& tx, PublicationData& publicationData)
+{
+    auto atv = VeriBlock::ATV::fromVbkEncoding(tx.atv);
+    publicationData = atv.transaction.publicationData;
 }
 } // namespace VeriBlock

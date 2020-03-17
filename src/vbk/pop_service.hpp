@@ -47,19 +47,16 @@ struct PopService {
 
     virtual bool blockPopValidation(const CBlock& block, const CBlockIndex& pindexPrev, const Consensus::Params& params, BlockValidationState& state) = 0;
 
-    virtual void updateContext(const std::vector<std::vector<uint8_t>>& veriBlockBlocks, const std::vector<std::vector<uint8_t>>& bitcoinBlocks) = 0;
+    virtual bool updateContext(const std::vector<uint8_t><vector>& veriBlockBlocks, const std::vector<uint8_t><vector>& bitcoinBlocks, TxValidationState& state) = 0;
 
     virtual bool parsePopTx(const CTransactionRef& tx, ScriptError* serror, Publications* publications, Context* ctx, PopTxType* type) = 0;
 
     virtual bool determineATVPlausibilityWithBTCRules(AltchainId altChainIdentifier, const CBlockHeader& popEndorsementHeader, const Consensus::Params& params, TxValidationState& state) = 0;
 
-    virtual void addPayloads(std::string blockHash, const int& nHeight, const Publications& publications) = 0;
-    virtual void addPayloads(const CBlockIndex & blockIndex, const CBlock & block) = 0;
+    virtual void connectPayloads(const CBlockIndex & blockIndex, const CBlock & block) = 0;
 
     virtual void removePayloads(const CBlockIndex & block) = 0;
-    virtual void removePayloads(std::string blockHash, const int& blockHeight) = 0;
 
-    virtual void setConfig() = 0;
 };
 } // namespace VeriBlock
 

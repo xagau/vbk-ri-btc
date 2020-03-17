@@ -4,16 +4,15 @@
 #include <vbk/entity/pop.hpp>
 #include <vbk/pop_service.hpp>
 #include <vbk/pop_service/pop_service_exception.hpp>
+#include <veriblock/popmanager.hpp>
+#include <veriblock/storage/endorsement_repository_inmem.hpp>
 
 #include <memory>
 #include <vector>
 
 #include <chainparams.h>
 
-#include <grpc++/grpc++.h>
 #include <sync.h>
-
-#include "integration.grpc.pb.h"
 
 namespace VeriBlock {
 
@@ -21,22 +20,28 @@ class PopServiceImpl : public PopService
 {
 private:
     std::mutex mutex;
-    std::shared_ptr<VeriBlock::GrpcPopService::Stub> grpcPopService;
+    std::shared_ptr<AltChainParams> alt_param = std::make_shared<VeriBlock::AltChainParams>();
+    std::shared_ptr<VeriBlock::BtcChainParams> btc_param = std::make_shared<VeriBlock::BtcChainParamsTest>();
+    std::shared_ptr<VeriBlock::VbkChainParams> vbk_param = std::make_shared<VeriBlock::VbkChainParamsTest>();
+    std::shared_ptr<VeriBlock::EndorsementRepository<BtcEndorsement>> btc_e_repo = std::make_shared<VeriBlock::EndorsementRepositoryInmem<BtcEndorsement>>();
+    std::shared_ptr<VeriBlock::EndorsementRepository<VbkEndorsement>> vbk_e_repo = std::make_shared<VeriBlock::EndorsementRepositoryInmem<VbkEndorsement>>();
+    VeriBlock::PopManager pop;
 
 public:
+    VeriBlock::PopManager& getPopManager() {
+        return pop;
+    }
 
     // FIXME: have to make it public so that it could be accessed in mocks
     // the index of the last temporary payloads applied to the alt-integration blockchain view
     uint32_t temporaryPayloadsIndex;
 
-    PopServiceImpl(bool altautoconfig = false, bool doinit = true);
+    PopServiceImpl(bool doinit = true);
 
     ~PopServiceImpl() override = default;
 
     bool addTemporaryPayloads(const CTransactionRef& tx, const CBlockIndex& pindexPrev, const Consensus::Params& params, TxValidationState& state) override;
     void clearTemporaryPayloads() override;
-
-    void savePopTxToDatabase(const CBlock& block, const int& nHeight) override;
 
     std::vector<BlockBytes> getLastKnownVBKBlocks(size_t blocks) override;
     std::vector<BlockBytes> getLastKnownBTCBlocks(size_t blocks) override;
@@ -50,21 +55,16 @@ public:
 
     bool blockPopValidation(const CBlock& block, const CBlockIndex& pindexPrev, const Consensus::Params& params, BlockValidationState& state) override;
 
-    void updateContext(const std::vector<std::vector<uint8_t>>& veriBlockBlocks, const std::vector<std::vector<uint8_t>>& bitcoinBlocks) override;
+    bool updateContext(const std::vector<uint8_t><vector>& veriBlockBlocks, const std::vector<uint8_t><vector>& bitcoinBlocks, TxValidationState& state) override;
 
     bool parsePopTx(const CTransactionRef& tx, ScriptError* serror, Publications* publications, Context* ctx, PopTxType* type) override;
 
     bool determineATVPlausibilityWithBTCRules(AltchainId altChainIdentifier, const CBlockHeader& popEndorsementHeader, const Consensus::Params& params, TxValidationState& state) override;
 
-    void addPayloads(std::string blockHash, const int& nHeight, const Publications& publications) override;
-    void addPayloads(const CBlockIndex & blockIndex, const CBlock & block) override;
+    void connectPayloads(const CBlockIndex& prev, const CBlock& connecting) override;
 
-    void removePayloads(const CBlockIndex & blockIndex) override;
-    void removePayloads(std::string blockHash, const int& blockHeight) override;
+    void removePayloads(const CBlockIndex& blockIndex) override;
 
-    void setConfig() override;
-
-public:
     virtual void getPublicationsData(const Publications& tx, PublicationData& publicationData);
 };
 
