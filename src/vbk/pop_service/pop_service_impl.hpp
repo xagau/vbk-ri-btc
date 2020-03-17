@@ -55,15 +55,16 @@ public:
 
     bool blockPopValidation(const CBlock& block, const CBlockIndex& pindexPrev, const Consensus::Params& params, BlockValidationState& state) override;
 
-    bool updateContext(const std::vector<uint8_t><vector>& veriBlockBlocks, const std::vector<uint8_t><vector>& bitcoinBlocks, TxValidationState& state) override;
+    bool doUpdateContext(const std::vector<std::vector<uint8_t>>& veriBlockBlocks, const std::vector<std::vector<uint8_t>>& bitcoinBlocks, TxValidationState& state) override;
+    void doRemoveContext(const std::vector<std::vector<uint8_t>>& veriBlockBlocks, const std::vector<std::vector<uint8_t>>& bitcoinBlocks) override;
 
     bool parsePopTx(const CTransactionRef& tx, ScriptError* serror, Publications* publications, Context* ctx, PopTxType* type) override;
 
     bool determineATVPlausibilityWithBTCRules(AltchainId altChainIdentifier, const CBlockHeader& popEndorsementHeader, const Consensus::Params& params, TxValidationState& state) override;
 
-    void connectPayloads(const CBlockIndex& prev, const CBlock& connecting) override;
+    void commitPayloads(const CBlockIndex& prev, const CBlock& connecting) override;
 
-    void removePayloads(const CBlockIndex& blockIndex) override;
+    void removePayloads(const CBlock& block) override;
 
     virtual void getPublicationsData(const Publications& tx, PublicationData& publicationData);
 };
