@@ -236,6 +236,11 @@ if test x$enable_bip70 != xno; then
   AC_MSG_ERROR([BIP70 is no longer supported!])
 fi
 
+AC_ARG_WITH([protoc-bindir],[AS_HELP_STRING([--with-protoc-bindir=BIN_DIR],[specify protoc bin path])], [protoc_bin_path=$withval], [])
+AC_ARG_WITH([grpc-cpp-plugin-bindir],[AS_HELP_STRING([--with-grpc-cpp-plugin-bindir=BIN_DIR],[specify grpc_cpp_plugin bin path])], [grpc_cpp_plugin_bin_path=$withval], [])
+AC_ARG_WITH([vbk-proto],[AS_HELP_STRING([--with-vbk-proto=PROTO_FILE],[specify VBK proto file])], [VBK_PROTO=$withval], [VBK_PROTO=vbk/alt-integration-proto/proto/integration.proto])
+AC_SUBST(VBK_PROTO)
+
 AC_ARG_ENABLE(man,
     [AS_HELP_STRING([--disable-man],
                     [do not install man pages (default is to install)])],,
@@ -1244,6 +1249,17 @@ if test x$use_pkgconfig = xyes; then
   m4_ifdef(
     [PKG_CHECK_MODULES],
     [
+      echo "pkg-config is used..."
+      export PKG_CONFIG_PATH=$PKG_CONFIG_PATH:/usr/local/lib64/pkgconfig
+      PKG_CHECK_MODULES([GRPC], [grpc++ protobuf],, [AC_MSG_ERROR(grpc++/protobuf not found.)])
+      PKG_CHECK_MODULES([SSL], [libssl],, [AC_MSG_ERROR(openssl not found.)])
+      PKG_CHECK_MODULES([CRYPTO], [libcrypto],,[AC_MSG_ERROR(libcrypto not found.)])
+      if test x$use_tests != xno; then
+        PKG_CHECK_MODULES([GMOCK], [gmock],,[AC_MSG_ERROR(gmock not found.)])
+      fi
+      if test x$enable_bip70 != xno; then
+        BITCOIN_QT_CHECK([PKG_CHECK_MODULES([PROTOBUF], [protobuf], [have_protobuf=yes], [have_protobuf=no])])
+      fi
       if test x$use_qr != xno; then
         BITCOIN_QT_CHECK([PKG_CHECK_MODULES([QR], [libqrencode], [have_qrencode=yes], [have_qrencode=no])])
       fi
@@ -1266,6 +1282,32 @@ if test x$use_pkgconfig = xyes; then
     ]
   )
 else
+  GRPC_CPPFLAGS=-pthread
+  GRPC_LIBS=""
+  # all dependencies of grpc
+  AC_CHECK_HEADER([grpc++/grpc++.h],,AC_MSG_ERROR(grpc headers missing))
+  AC_CHECK_LIB([grpc++],[main],[GRPC_LIBS+=" -lgrpc++"],AC_MSG_ERROR(libgrpc++ missing))
+  AC_CHECK_LIB([grpc],[main],[GRPC_LIBS+=" -lgrpc"],AC_MSG_ERROR(libgrpc missing))
+  AC_CHECK_LIB([gpr],[main],[GRPC_LIBS+=" -lgpr"],AC_MSG_ERROR(libgpr missing))
+  AC_CHECK_LIB([z],[main],[GRPC_LIBS+=" -lz"],AC_MSG_ERROR(libz missing))
+  AC_CHECK_LIB([cares],[main],[GRPC_LIBS+=" -lcares"],AC_MSG_ERROR(cares missing))
+  AC_CHECK_LIB([crypto],[main],[GRPC_LIBS+=" -lcrypto"],AC_MSG_ERROR(crypto missing))
+  AC_CHECK_LIB([protobuf],[main],[GRPC_LIBS+=" -lprotobuf"],AC_MSG_ERROR(protobuf missing))
+  AC_CHECK_LIB([address_sorting],[main],[GRPC_LIBS+=" -laddress_sorting"],AC_MSG_ERROR(protobuf missing))
+
+  if test x$use_tests != xno; then
+    AC_CHECK_HEADER([gmock/gmock.h],,AC_MSG_ERROR(libgmock headers missing))
+    AC_CHECK_LIB([gtest],[main],[GMOCK_LIBS=" -lgtest"],AC_MSG_ERROR(libgtest missing))
+    AC_CHECK_LIB([gmock],[main],[GMOCK_LIBS+=" -lgmock"],AC_MSG_ERROR(libgmock missing))
+  fi
+
+  AC_ARG_VAR(GRPC_LIBS, "linker flags for GRPC")
+
+  AC_CHECK_HEADER([openssl/crypto.h],,AC_MSG_ERROR(libcrypto headers missing))
+  AC_CHECK_LIB([crypto],      [main],CRYPTO_LIBS=-lcrypto, AC_MSG_ERROR(libcrypto missing))
+
+  AC_CHECK_HEADER([openssl/ssl.h],, AC_MSG_ERROR(libssl headers missing),)
+  AC_CHECK_LIB([ssl],         [main],SSL_LIBS=-lssl, AC_MSG_ERROR(libssl missing))
 
   if test x$build_bitcoin_cli$build_bitcoind$bitcoin_enable_qt$use_tests != xnononono; then
     AC_CHECK_HEADER([event2/event.h],, AC_MSG_ERROR(libevent headers missing),)
@@ -1303,6 +1345,28 @@ else
     BITCOIN_QT_CHECK([AC_CHECK_HEADER([qrencode.h],, have_qrencode=no)])
   fi
 fi
+
+if test "x$protoc_bin_path" != x; then
+  AC_PATH_PROG(PROTOC,protoc,,$protoc_bin_path)
+else
+  AC_PATH_PROG(PROTOC,protoc)
+fi
+AS_IF([test x"$PROTOC" == x], [AC_MSG_ERROR([Please install protoc before configuring.])])
+
+if test "x$grpc_cpp_plugin_bin_path" != x; then
+  AC_PATH_PROG(GRPC_CPP_PLUGIN,grpc_cpp_plugin,,$grpc_cpp_plugin_bin_path)
+else
+  AC_PATH_PROG(GRPC_CPP_PLUGIN,grpc_cpp_plugin)
+fi
+AS_IF([test x"$GRPC_CPP_PLUGIN" == x], [AC_MSG_ERROR([Please install grpc_cpp_plugin before configuring.])])
+
+
+save_CXXFLAGS="${CXXFLAGS}"
+CXXFLAGS="${CXXFLAGS} ${CRYPTO_CFLAGS} ${SSL_CFLAGS}"
+AC_CHECK_DECLS([EVP_MD_CTX_new],,,[AC_INCLUDES_DEFAULT
+#include <openssl/x509_vfy.h>
+])
+CXXFLAGS="${save_CXXFLAGS}"
 
 dnl RapidCheck property-based testing
 
