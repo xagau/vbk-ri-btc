@@ -44,11 +44,11 @@ CBlock headerFromBytes(const std::vector<uint8_t>& v)
     return header;
 }
 
-VeriBlock::Payloads cast(const VeriBlock::Publications& publications)
+VeriBlock::Payloads cast(const VeriBlock::Publications& publications, const CBlockIndex& blockIndexPrev)
 {
     VeriBlock::AltProof altproof;
     altproof.atv = VeriBlock::ATV::fromVbkEncoding(publications.atv);
-    altproof.containing = cast(prev.nHeight + 1, connecting);
+    altproof.containing = cast(blockIndexPrev.nHeight + 1, blockIndexPrev.GetBlockHeader());
 
     CBlock endorsed = headerFromBytes(altproof.atv.transaction.publicationData.header);
     auto* index = LookupBlockIndex(endorsed.GetHash());
@@ -66,43 +66,42 @@ VeriBlock::Payloads cast(const VeriBlock::Publications& publications)
 bool forEachPopTx(
     CBlock& block,
     std::function<bool(const VeriBlock::Publications&, VeriBlock::ValidationState&)> onPublications,
-    std::function<bool(const VeriBlock::Context&, VeriBlock::ValidationState&)> onContext,
+    std::function<bool(const VeriBlock::Context&, TxValidationState&)> onContext,
     BlockValidationState& state)
 {
     TxValidationState stx;
     bool ret = forEachPopTx(block, std::move(onPublications), std::move(onContext), stx);
     return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, stx.GetRejectReason(),
-        strprintf("[%s] pop block invalid: %s",
-            block.GetHash().GetHex(),
-            stx.GetDebugMessage()));
+        "[" + block.GetHash().GetHex() + "] pop block invalid: " + stx.GetDebugMessage());
 }
 
 bool onPopTx(
-    CTransaction& tx,
+    const CTransaction& tx,
     std::function<bool(const VeriBlock::Publications&, VeriBlock::ValidationState&)> onPublications,
-    std::function<bool(const VeriBlock::Context&, VeriBlock::ValidationState&)> onContext,
+    std::function<bool(const VeriBlock::Context&, TxValidationState&)> onContext,
     TxValidationState& state)
 {
     VeriBlock::ValidationState instate;
+    TxValidationState txInstate;
     VeriBlock::Publications publications;
     VeriBlock::Context context;
     VeriBlock::PopTxType type = VeriBlock::PopTxType::UNKNOWN;
     ScriptError serror = ScriptError::SCRIPT_ERR_UNKNOWN_ERROR;
-    if (!VeriBlock::parsePopTx(tx, &serror, &publications, &context, &type)) {
+    if (!VeriBlock::getService<VeriBlock::PopService>().parsePopTx(MakeTransactionRef(tx), &serror, &publications, &context, &type)) {
         return state.Invalid(
             TxValidationResult::TX_BAD_POP_DATA,
             "pop-tx-invalid-script",
-            strprintf("[%s] scriptSig of POP tx is invalid: %s", tx->GetHash().ToString(), ScriptErrorString(serror)));
+            "[" + tx.GetHash().ToString() + "] scriptSig of POP tx is invalid: " + ScriptErrorString(serror));
     }
 
 
     switch (type) {
     case VeriBlock::PopTxType::CONTEXT: {
-        if (!onContext(context, instate)) {
+        if (!onContext(context, txInstate)) {
             return state.Invalid(
                 TxValidationResult::TX_BAD_POP_DATA,
                 "pop-tx-updatecontext-failed",
-                strprintf("[%s] updatecontext failed: %s, %s", tx->GetHash().ToString(), instate.GetRejectReason(), instate.GetDebugMessage()));
+                "[" + tx.GetHash().ToString() + "] updatecontext failed: " + txInstate.GetRejectReason() + ", " + txInstate.GetDebugMessage());
         }
         break;
     }
@@ -111,11 +110,7 @@ bool onPopTx(
             return state.Invalid(
                 TxValidationResult::TX_BAD_POP_DATA,
                 "pop-tx-publications-failed",
-                strprintf(
-                    "[%s] publications failed: %s, %s",
-                    tx->GetHash().ToString(),
-                    state.GetRejectReason(),
-                    state.GetDebugMessage()));
+                "[" + tx.GetHash().ToString() + "] publications failed: " + instate.GetRejectReason() + ", " + instate.GetDebugMessage());
         }
         break;
     }
@@ -124,7 +119,7 @@ bool onPopTx(
         return state.Invalid(
             TxValidationResult::TX_BAD_POP_DATA,
             "pop-tx-eval-script-failed",
-            strprintf("[%s] EvalScript returned unexpected type", tx->GetHash().ToString()));
+            "[" + tx.GetHash().ToString() + "] EvalScript returned unexpected type");
     }
     }
 
@@ -132,9 +127,9 @@ bool onPopTx(
 }
 
 bool forEachPopTx(
-    CBlock& block,
+    const CBlock& block,
     std::function<bool(const VeriBlock::Publications&, VeriBlock::ValidationState&)> onPublications,
-    std::function<bool(const VeriBlock::Context&, VeriBlock::ValidationState&)> onContext,
+    std::function<bool(const VeriBlock::Context&, TxValidationState&)> onContext,
     TxValidationState& state)
 {
     for (const auto& tx : block.vtx) {
@@ -155,30 +150,29 @@ bool forEachPopTx(
 
 namespace VeriBlock {
 
-PopServiceImpl::PopServiceImpl(bool doinit) : pop(btc_param, vbk_param, btc_e_repo, vbk_e_repo, alt_param)
+const static std::string DATABASE_NAME = "alt-integration-db";
+
+PopServiceImpl::PopServiceImpl(bool doinit) : pop(btc_param, vbk_param, btc_e_repo, vbk_e_repo, alt_param), stateManager(DATABASE_NAME)
 {
     // for mocking purposes
     if (!doinit) return;
-
-    auto& config = VeriBlock::getService<VeriBlock::Config>();
-
-    assert(getReservedBlockIndexBegin(config) <= getReservedBlockIndexEnd(config) && "oh no, programming error");
-    temporaryPayloadsIndex = getReservedBlockIndexEnd(config);
-    clearTemporaryPayloads();
 }
 
-bool PopServiceImpl::commitPayloads(const CBlockIndex& prev, const CBlock& connecting, BlockValidationState& state)
+bool PopServiceImpl::commitPayloads(const CBlockIndex& prev, const CBlock& connecting, TxValidationState& state)
 {
     std::lock_guard<std::mutex> lock(mutex);
 
+    // TODO commit StateChange changes
+    std::shared_ptr<StateChange> change = stateManager.newChange();
+
     bool ret = forEachPopTx(
         connecting,
-        [](const Publications& publications, const VeriBock::ValidationState& state) {
+        [this, &change, &prev](const Publications& publications, VeriBlock::ValidationState& state) -> bool {
             // handle publications changes
-            VeriBlock::Payloads payloads = cast(publications);
-            return pop.addPayloads(payloads, state);
+            VeriBlock::Payloads payloads = cast(publications, prev);
+            return pop.addPayloads(payloads, *change, state);
         },
-        [](const Context& context, const VeriBlock::ValidationState& state) {
+        [this](const Context& context, TxValidationState& state) -> bool {
             // handle context changes
             return this->doUpdateContext(context.vbk, context.btc, state);
         },
@@ -187,29 +181,36 @@ bool PopServiceImpl::commitPayloads(const CBlockIndex& prev, const CBlock& conne
     if (ret) {
         // block is valid
         pop.commit();
+        stateManager.commit(change);
     } else {
-        pop.rollback();
+        pop.rollback(*change);
     }
+
 
     return ret;
 }
 
-bool PopServiceImpl::removePayloads(const CBlockIndex& block, TxValidationState& state)
+bool PopServiceImpl::removePayloads(const CBlockIndex& connecting, TxValidationState& state)
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    pop.rollback();
+    // TODO commit StateChange changes
+    auto change = stateManager.newChange();
+
+    pop.rollback(*change);
 
     return forEachPopTx(
-        connecting,
-        [this](const Publications& publications, const VeriBock::ValidationState& state) {
+        connecting.GetBlockHeader(),
+        [this, &change, &connecting](const Publications& publications, VeriBlock::ValidationState&) -> bool {
             // remove publications
-            VeriBlock::Payloads payloads = cast(publications);
-            return this->pop.removePayloads(payloads, state);
+            VeriBlock::Payloads payloads = cast(publications, *connecting.pprev);
+            this->pop.removePayloads(payloads, *change);
+            return true;
         },
-        [this](const Context& context, const VeriBlock::ValidationState& state) {
+        [this, &state](const Context& context, TxValidationState&) -> bool {
             // remove context
-            return this->doRemoveContext(context.vbk, context.btc, state);
+            this->doRemoveContext(context.vbk, context.btc);
+            return true;
         },
         state);
 }
@@ -262,21 +263,19 @@ bool PopServiceImpl::doUpdateContext(const std::vector<std::vector<uint8_t>>& ve
 {
     VeriBlock::ValidationState instate;
     // apply BTC blocks
-    if (!VeriBlock::addBlocks(pop.getPopManager().btc(), bitcoinBlocks, instate)) {
+    if (!VeriBlock::addBlocks(pop.btc(), bitcoinBlocks, instate)) {
         return state.Invalid(
             TxValidationResult::TX_BAD_POP_DATA,
             instate.GetRejectReason(),
-            strprintf("BTC context is invalid: %s",
-                instate.GetDebugMessage()));
+            "BTC context is invalid: " + instate.GetDebugMessage());
     }
 
     // apply VBK blocks
-    if (!VeriBlock::addBlocks(pop.getPopManager().vbk(), veriBlockBlocks, instate)) {
+    if (!VeriBlock::addBlocks(pop.vbk(), veriBlockBlocks, instate)) {
         return state.Invalid(
             TxValidationResult::TX_BAD_POP_DATA,
             instate.GetRejectReason(),
-            strprintf("VBK context is invalid: %s",
-                instate.GetDebugMessage()));
+            "VBK context is invalid: " + instate.GetDebugMessage());
     }
 
     return true;
@@ -341,11 +340,11 @@ bool PopServiceImpl::determineATVPlausibilityWithBTCRules(AltchainId altChainIde
     // if the context info container contains a bad block height, or nonexistent previous keystones
     auto expected = getService<Config>().index.unwrap();
     if (altChainIdentifier.unwrap() != expected) {
-        return state.Invalid(TxValidationResult::TX_BAD_POP_DATA, "pop-tx-altchain-id", strprintf("wrong altchain ID. Expected %d, got %d.", expected, altChainIdentifier.unwrap()));
+        return state.Invalid(TxValidationResult::TX_BAD_POP_DATA, "pop-tx-altchain-id", "wrong altchain ID. Expected " + std::to_string(expected) + ", got " + std::to_string(altChainIdentifier.unwrap()));
     }
 
     if (!CheckProofOfWork(popEndorsementHeader.GetHash(), popEndorsementHeader.nBits, params)) {
-        return state.Invalid(TxValidationResult::TX_BAD_POP_DATA, "pop-tx-endorsed-block-pow", strprintf("endorsed block has invalid PoW: %s"));
+        return state.Invalid(TxValidationResult::TX_BAD_POP_DATA, "pop-tx-endorsed-block-pow", "endorsed block has invalid PoW: " + popEndorsementHeader.GetHash().GetHex());
     }
 
     return true;
@@ -358,11 +357,6 @@ bool PopServiceImpl::addTemporaryPayloads(const CTransactionRef& tx, const CBloc
 
 bool addTemporaryPayloadsImpl(PopServiceImpl& pop, const CTransactionRef& tx, const CBlockIndex& pindexPrev, const Consensus::Params& params, TxValidationState& state)
 {
-    auto& config = VeriBlock::getService<VeriBlock::Config>();
-    if (pop.temporaryPayloadsIndex >= getReservedBlockIndexEnd(config)) {
-        return state.Invalid(TxValidationResult::TX_BAD_POP_DATA, "pop-block-num-pop-tx", "too many pop transactions in a block");
-    }
-
     //TODO: need locking
 
     bool isValid = txPopValidation(pop, tx, pindexPrev, params, state, pop.temporaryPayloadsIndex);
@@ -375,14 +369,15 @@ bool addTemporaryPayloadsImpl(PopServiceImpl& pop, const CTransactionRef& tx, co
 
 void PopServiceImpl::clearTemporaryPayloads()
 {
-    this->pop.rollback();
+    // TODO commit StateChange changes
+    auto change = stateManager.newChange();
+    this->pop.rollback(*change);
 }
 
 bool txPopValidation(PopServiceImpl& pop, const CTransactionRef& tx, const CBlockIndex& pindexPrev, const Consensus::Params& params, TxValidationState& state, uint32_t heightIndex) EXCLUSIVE_LOCKS_REQUIRED(cs_main)
 {
-    TxValidationState state;
     onPopTx(
-        *tx, [](const Publications& publications, const VeriBock::ValidationState& state) {
+        *tx, [&pop, &tx, &params, &pindexPrev](const Publications& publications, VeriBlock::ValidationState& state) {
               // handle publications changes
               PublicationData popEndorsement;
               pop.getPublicationsData(publications, popEndorsement);
@@ -392,56 +387,51 @@ bool txPopValidation(PopServiceImpl& pop, const CTransactionRef& tx, const CBloc
               try {
                   popEndorsementHeader = headerFromBytes(popEndorsement.header);
               } catch (const std::exception& e) {
-                  return state.Invalid(TxValidationResult::TX_BAD_POP_DATA, "pop-tx-alt-block-invalid", strprintf("[%s] can't deserialize endorsed block header: %s", tx->GetHash().ToString(), e.what()));
+                  return state.Invalid("pop-tx-alt-block-invalid", "[" + tx->GetHash().ToString() + "] can't deserialize endorsed block header: " + e.what());
               }
 
-              if (!pop.determineATVPlausibilityWithBTCRules(AltchainId(popEndorsement.identifier()), popEndorsementHeader, params, state)) {
-                  return false; // TxValidationState already set
+              TxValidationState txState;
+              if (!pop.determineATVPlausibilityWithBTCRules(AltchainId(popEndorsement.identifier), popEndorsementHeader, params, txState)) {
+                  return state.Invalid("pop-tx-alt-block-invalid", "[" + tx->GetHash().ToString() + "]: " + txState.GetRejectReason() + ", " + txState.GetDebugMessage());
               }
 
               AssertLockHeld(cs_main);
               const CBlockIndex* popEndorsementIdnex = LookupBlockIndex(popEndorsementHeader.GetHash());
               if (popEndorsementIdnex == nullptr) {
-                  return state.Invalid(TxValidationResult::TX_BAD_POP_DATA, "pop-tx-endorsed-block-not-known-orphan-block", strprintf("[%s] can not find endorsed block index: %s", tx->GetHash().ToString(), popEndorsementHeader.GetHash().ToString()));
+                  return state.Invalid("pop-tx-endorsed-block-not-known-orphan-block", "[" + tx->GetHash().ToString() + "] can not find endorsed block index: " + popEndorsementHeader.GetHash().ToString());
               }
               const CBlockIndex* ancestor = pindexPrev.GetAncestor(popEndorsementIdnex->nHeight);
               if (ancestor == nullptr || ancestor->GetBlockHash() != popEndorsementIdnex->GetBlockHash()) {
-                  return state.Invalid(TxValidationResult::TX_BAD_POP_DATA, "pop-tx-endorsed-block-not-from-this-chain", strprintf("[%s] can not find endorsed block in the chain: %s", tx->GetHash().ToString(), popEndorsementHeader.GetHash().ToString()));
+                  return state.Invalid("pop-tx-endorsed-block-not-from-this-chain", "[" + tx->GetHash().ToString() + "] can not find endorsed block in the chain: " + popEndorsementHeader.GetHash().ToString());
               }
+              auto config = VeriBlock::getService<VeriBlock::Config>();
 
               if (pindexPrev.nHeight + 1 - popEndorsementIdnex->nHeight > config.POP_REWARD_SETTLEMENT_INTERVAL) {
-                  return state.Invalid(TxValidationResult::TX_BAD_POP_DATA,
-                                       "pop-tx-endorsed-block-too-old",
-                                       strprintf("[%s] endorsed block is too old for this chain: %s. (last block height: %d, endorsed block height: %d, settlement interval: %d)",
-                                                 tx->GetHash().ToString(),
-                                                 popEndorsementIdnex->GetBlockHash().GetHex(),
-                                                 pindexPrev.nHeight + 1,
-                                                 popEndorsementIdnex->nHeight,
-                                                 config.POP_REWARD_SETTLEMENT_INTERVAL));
+                  return state.Invalid("pop-tx-endorsed-block-too-old",
+                                       "[" + tx->GetHash().ToString() +  "] endorsed block is too old for this chain: " + popEndorsementIdnex->GetBlockHash().GetHex() +
+                      ". (last block height: " + std::to_string(pindexPrev.nHeight + 1) + ", endorsed block height: " 
+                      + std::to_string(popEndorsementIdnex->nHeight) + ", settlement interval: " +std::to_string(config.POP_REWARD_SETTLEMENT_INTERVAL)+")");
               }
 
               try {
-                  VeriBlock::Payloads payloads = cast(publications);
-                  if (!this->pop.addPayloads(payloads, state)) {
+                  VeriBlock::Payloads payloads = cast(publications, pindexPrev);
+
+                  //TODO commit StateChange changes
+                  auto change = pop.getStateManager().newChange();
+                  
+                  if (!pop.getPopManager().addPayloads(payloads, *change, state)) {
                       return state.Invalid(
                           "pop-tx-add-payloads-failed",
-                          strprintf(
-                              "[%s] addPayloads failed: %s, %s",
-                              tx->GetHash().ToString(),
-                              state.GetRejectReason(),
-                              state.GetDebugMessage()));
+                              "[" + tx->GetHash().ToString() + "] addPayloads failed: " + state.GetRejectReason() + ", " + state.GetDebugMessage());
                   }
               } catch (const PopServiceException& e) {
                   return state.Invalid(
                       "pop-tx-add-payloads-failed",
-                      strprintf(
-                          "[%s] addPayloads failed: %s",
-                          tx->GetHash().ToString(),
-                          e.what()));
+                          "[" + tx->GetHash().ToString() + "] addPayloads failed: " + e.what());
               } },
-        [](const Context& context, const VeriBlock::ValidationState& state) {
+        [&pop](const Context& context, TxValidationState& state) {
             // handle context changes
-            return this->doUpdateContext(context.vbk, context.btc, state);
+            return pop.doUpdateContext(context.vbk, context.btc, state);
 
             //            ) {
             //                return state.Invalid(

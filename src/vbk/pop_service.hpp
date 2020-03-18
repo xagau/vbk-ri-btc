@@ -47,16 +47,17 @@ struct PopService {
 
     virtual bool blockPopValidation(const CBlock& block, const CBlockIndex& pindexPrev, const Consensus::Params& params, BlockValidationState& state) = 0;
 
-    virtual bool doUpdateContext(const std::vector<uint8_t> const std::vector<uint8_t>& veriBlockBlocks, const std::vector<uint8_t><vector>& bitcoinBlocks, TxValidationState& state) = 0;
+    virtual bool doUpdateContext(const std::vector<std::vector<uint8_t>>& veriBlockBlocks, const std::vector<std::vector<uint8_t>>& bitcoinBlocks, TxValidationState& state) = 0;
+
+    virtual void doRemoveContext(const std::vector<std::vector<uint8_t>>& veriBlockBlocks, const std::vector<std::vector<uint8_t>>& bitcoinBlocks) = 0;
 
     virtual bool parsePopTx(const CTransactionRef& tx, ScriptError* serror, Publications* publications, Context* ctx, PopTxType* type) = 0;
 
     virtual bool determineATVPlausibilityWithBTCRules(AltchainId altChainIdentifier, const CBlockHeader& popEndorsementHeader, const Consensus::Params& params, TxValidationState& state) = 0;
 
-    virtual void commitPayloads(const CBlockIndex & blockIndex, const CBlock & block) = 0;
+    virtual bool commitPayloads(const CBlockIndex& blockIndex, const CBlock& block, TxValidationState& state) = 0;
 
-    virtual void removePayloads(const CBlockIndex & block) = 0;
-
+    virtual bool removePayloads(const CBlockIndex& block, TxValidationState& state) = 0;
 };
 } // namespace VeriBlock
 

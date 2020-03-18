@@ -5,7 +5,9 @@
 #include <vbk/pop_service.hpp>
 #include <vbk/pop_service/pop_service_exception.hpp>
 #include <veriblock/popmanager.hpp>
+#include <veriblock/state_manager.hpp>
 #include <veriblock/storage/endorsement_repository_inmem.hpp>
+#include <veriblock/storage/repository_rocks_manager.hpp>
 
 #include <memory>
 #include <vector>
@@ -26,10 +28,17 @@ private:
     std::shared_ptr<VeriBlock::EndorsementRepository<BtcEndorsement>> btc_e_repo = std::make_shared<VeriBlock::EndorsementRepositoryInmem<BtcEndorsement>>();
     std::shared_ptr<VeriBlock::EndorsementRepository<VbkEndorsement>> vbk_e_repo = std::make_shared<VeriBlock::EndorsementRepositoryInmem<VbkEndorsement>>();
     VeriBlock::PopManager pop;
+    VeriBlock::StateManager<RepositoryRocksManager> stateManager;
 
 public:
-    VeriBlock::PopManager& getPopManager() {
+    VeriBlock::PopManager& getPopManager()
+    {
         return pop;
+    }
+
+    VeriBlock::StateManager<RepositoryRocksManager>& getStateManager()
+    {
+        return stateManager;
     }
 
     // FIXME: have to make it public so that it could be accessed in mocks
@@ -62,9 +71,9 @@ public:
 
     bool determineATVPlausibilityWithBTCRules(AltchainId altChainIdentifier, const CBlockHeader& popEndorsementHeader, const Consensus::Params& params, TxValidationState& state) override;
 
-    void commitPayloads(const CBlockIndex& prev, const CBlock& connecting) override;
+    bool commitPayloads(const CBlockIndex& prev, const CBlock& connecting, TxValidationState& state) override;
 
-    void removePayloads(const CBlock& block) override;
+    bool removePayloads(const CBlockIndex& block, TxValidationState& state) override;
 
     virtual void getPublicationsData(const Publications& tx, PublicationData& publicationData);
 };
