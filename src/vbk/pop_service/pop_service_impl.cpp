@@ -31,7 +31,7 @@ VeriBlock::AltBlock cast(int nHeight, const CBlockHeader& block)
     VeriBlock::AltBlock alt;
     alt.height = nHeight;
     alt.timestamp = block.nTime;
-    auto hash = block.GetBlockHash();
+    auto hash = block.GetHash();
     alt.hash = std::vector<uint8_t>{hash.begin(), hash.end()};
     return alt;
 }
@@ -44,7 +44,7 @@ CBlock headerFromBytes(const std::vector<uint8_t>& v)
     return header;
 }
 
-VeriBlock::Payloads cast(const Publications& publications)
+VeriBlock::Payloads cast(const VeriBlock::Publications& publications)
 {
     VeriBlock::AltProof altproof;
     altproof.atv = VeriBlock::ATV::fromVbkEncoding(publications.atv);
@@ -65,8 +65,8 @@ VeriBlock::Payloads cast(const Publications& publications)
 
 bool forEachPopTx(
     CBlock& block,
-    std::function<bool(const Publications&, VeriBlock::ValidationState&)> onPublications,
-    std::function<bool(const Context&, VeriBlock::ValidationState&)> onContext,
+    std::function<bool(const VeriBlock::Publications&, VeriBlock::ValidationState&)> onPublications,
+    std::function<bool(const VeriBlock::Context&, VeriBlock::ValidationState&)> onContext,
     BlockValidationState& state)
 {
     TxValidationState stx;
@@ -79,16 +79,16 @@ bool forEachPopTx(
 
 bool onPopTx(
     CTransaction& tx,
-    std::function<bool(const Publications&, VeriBlock::ValidationState&)> onPublications,
-    std::function<bool(const Context&, VeriBlock::ValidationState&)> onContext,
+    std::function<bool(const VeriBlock::Publications&, VeriBlock::ValidationState&)> onPublications,
+    std::function<bool(const VeriBlock::Context&, VeriBlock::ValidationState&)> onContext,
     TxValidationState& state)
 {
     VeriBlock::ValidationState instate;
-    Publications publications;
-    Context context;
-    PopTxType type = PopTxType::UNKNOWN;
+    VeriBlock::Publications publications;
+    VeriBlock::Context context;
+    VeriBlock::PopTxType type = VeriBlock::PopTxType::UNKNOWN;
     ScriptError serror = ScriptError::SCRIPT_ERR_UNKNOWN_ERROR;
-    if (!parsePopTx(tx, &serror, &publications, &context, &type)) {
+    if (!VeriBlock::parsePopTx(tx, &serror, &publications, &context, &type)) {
         return state.Invalid(
             TxValidationResult::TX_BAD_POP_DATA,
             "pop-tx-invalid-script",
@@ -97,7 +97,7 @@ bool onPopTx(
 
 
     switch (type) {
-    case PopTxType::CONTEXT: {
+    case VeriBlock::PopTxType::CONTEXT: {
         if (!onContext(context, instate)) {
             return state.Invalid(
                 TxValidationResult::TX_BAD_POP_DATA,
@@ -106,7 +106,7 @@ bool onPopTx(
         }
         break;
     }
-    case PopTxType::PUBLICATIONS: {
+    case VeriBlock::PopTxType::PUBLICATIONS: {
         if (!onPublications(publications, instate)) {
             return state.Invalid(
                 TxValidationResult::TX_BAD_POP_DATA,
@@ -133,12 +133,12 @@ bool onPopTx(
 
 bool forEachPopTx(
     CBlock& block,
-    std::function<bool(const Publications&, VeriBlock::ValidationState&)> onPublications,
-    std::function<bool(const Context&, VeriBlock::ValidationState&)> onContext,
+    std::function<bool(const VeriBlock::Publications&, VeriBlock::ValidationState&)> onPublications,
+    std::function<bool(const VeriBlock::Context&, VeriBlock::ValidationState&)> onContext,
     TxValidationState& state)
 {
     for (const auto& tx : block.vtx) {
-        if (!isPopTx(*tx)) {
+        if (!VeriBlock::isPopTx(*tx)) {
             continue;
         }
 
