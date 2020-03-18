@@ -1,0 +1,3 @@
+[submodule "build_msvc/deps/alt-integration-cpp"]
+	path = build_msvc/deps/alt-integration-cpp
+	url = https://github.com/VeriBlock/alt-integration-cpp.git
