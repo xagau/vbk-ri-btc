@@ -10,6 +10,9 @@
 #include <consensus/params.h>
 #include <primitives/block.h>
 #include <protocol.h>
+#include <veriblock/blockchain/alt_chain_params.hpp>
+#include <veriblock/blockchain/btc_chain_params.hpp>
+#include <veriblock/blockchain/vbk_chain_params.hpp>
 
 #include <memory>
 #include <vector>
@@ -84,6 +87,11 @@ public:
     const std::vector<SeedSpec6>& FixedSeeds() const { return vFixedSeeds; }
     const CCheckpointData& Checkpoints() const { return checkpointData; }
     const ChainTxData& TxData() const { return chainTxData; }
+
+    const altintegration::AltChainParams& getAltParams() const { return *altParams; }
+    const altintegration::BtcChainParams& getBtcParams() const { return *btcParams; }
+    const altintegration::VbkChainParams& getVbkParams() const { return *vbkParams; }
+
 protected:
     CChainParams() {}
 
@@ -104,6 +112,9 @@ protected:
     bool m_is_test_chain;
     CCheckpointData checkpointData;
     ChainTxData chainTxData;
+    std::shared_ptr<altintegration::AltChainParams> altParams;
+    std::shared_ptr<altintegration::BtcChainParams> btcParams;
+    std::shared_ptr<altintegration::VbkChainParams> vbkParams;
 };
 
 /**
@@ -111,18 +122,18 @@ protected:
  * @returns a CChainParams* of the chosen chain.
  * @throws a std::runtime_error if the chain is not supported.
  */
-std::unique_ptr<const CChainParams> CreateChainParams(const std::string& chain);
+std::unique_ptr<const CChainParams> CreateChainParams(const std::string& chain, const std::string& btcnet, const std::string& vbknet);
 
 /**
  * Return the currently selected parameters. This won't change after app
  * startup, except for unit tests.
  */
-const CChainParams &Params();
+const CChainParams& Params();
 
 /**
  * Sets the params returned by Params() to those for the given chain name.
  * @throws std::runtime_error when the chain is not supported.
  */
-void SelectParams(const std::string& chain);
+void SelectParams(const std::string& chain, const std::string& btcnet, const std::string& vbknet);
 
 #endif // BITCOIN_CHAINPARAMS_H

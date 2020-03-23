@@ -29,12 +29,6 @@ using BlockBytes = std::vector<uint8_t>;
 struct PopService {
     virtual ~PopService() = default;
 
-    virtual bool addTemporaryPayloads(const CTransactionRef& tx, const CBlockIndex& pindexPrev, const Consensus::Params& params, TxValidationState& state) = 0;
-
-    virtual void clearTemporaryPayloads() = 0;
-
-    virtual void savePopTxToDatabase(const CBlock& block, const int& nHeight) = 0;
-
     virtual std::vector<BlockBytes> getLastKnownVBKBlocks(size_t blocks) = 0;
     virtual std::vector<BlockBytes> getLastKnownBTCBlocks(size_t blocks) = 0;
 
@@ -46,10 +40,6 @@ struct PopService {
     virtual void rewardsCalculateOutputs(const int& blockHeight, const CBlockIndex& endorsedBlock, const CBlockIndex& contaningBlocksTip, const CBlockIndex* difficulty_start_interval, const CBlockIndex* difficulty_end_interval, std::map<CScript, int64_t>& outputs) = 0;
 
     virtual bool blockPopValidation(const CBlock& block, const CBlockIndex& pindexPrev, const Consensus::Params& params, BlockValidationState& state) = 0;
-
-    virtual bool doUpdateContext(const std::vector<std::vector<uint8_t>>& veriBlockBlocks, const std::vector<std::vector<uint8_t>>& bitcoinBlocks, TxValidationState& state) = 0;
-
-    virtual void doRemoveContext(const std::vector<std::vector<uint8_t>>& veriBlockBlocks, const std::vector<std::vector<uint8_t>>& bitcoinBlocks) = 0;
 
     virtual bool parsePopTx(const CTransactionRef& tx, ScriptError* serror, Publications* publications, Context* ctx, PopTxType* type) = 0;
 

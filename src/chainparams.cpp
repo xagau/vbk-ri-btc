@@ -20,13 +20,37 @@
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
 
+#include <veriblock/params.hpp>
+
+
+struct AltChainParamsVBTC : public altintegration::AltChainParams {
+  ~AltChainParamsVBTC() override = default;
+  
+  AltChainParamsVBTC(const CBlock& genesis) {
+      auto hash = genesis.GetHash();
+      bootstrap.hash = std::vector<uint8_t>{hash.begin(), hash.end()};
+      bootstrap.height = 0; // pop is enabled starting at genesis
+      bootstrap.timestamp = genesis.GetBlockTime();
+  }
+
+  altintegration::AltBlock getBootstrapBlock() const noexcept {
+    return bootstrap;
+  }
+
+  altintegration::AltBlock bootstrap;
+};
 
 /**
  * Main network
  */
 class CMainParams : public CChainParams {
+
+
 public:
-    CMainParams() {
+    CMainParams(std::shared_ptr<altintegration::BtcChainParams> btc, std::shared_ptr<altintegration::VbkChainParams> vbk) {
+        this->btcParams = btc;
+        this->vbkParams = vbk;
+
         strNetworkID = CBaseChainParams::MAIN;
         consensus.nSubsidyHalvingInterval = 210000;
         consensus.BIP16Exception = uint256S("0x00000000000002dc756eebf4f49723ed8d30cc28a5f108eb94b1ba88ac4f9c22");
@@ -83,6 +107,8 @@ public:
         assert(consensus.hashGenesisBlock == uint256S("00000006cf4c4e6177695242a1347023b7b1bdef8119237a11511b9e490bf8d9"));
         assert(genesis.hashMerkleRoot == uint256S("06c6c7131bc50a1fcab02107d0f24bcfe22c1808080074dcedf5fea412a0fe1c"));
 
+        altParams = std::make_shared<AltChainParamsVBTC>(genesis);
+
         base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1,0);
         base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1,5);
         base58Prefixes[SECRET_KEY] =     std::vector<unsigned char>(1,128);
@@ -117,7 +143,10 @@ public:
  */
 class CTestNetParams : public CChainParams {
 public:
-    CTestNetParams() {
+    CTestNetParams(std::shared_ptr<altintegration::BtcChainParams> btc, std::shared_ptr<altintegration::VbkChainParams> vbk) {
+        this->btcParams = btc;
+        this->vbkParams = vbk;
+
         strNetworkID = CBaseChainParams::TESTNET;
         consensus.nSubsidyHalvingInterval = 210000;
         consensus.BIP16Exception = uint256S("0x00000000dd30457c001f4095d208cc1296b0eed002427aa599874af7a432b105");
@@ -168,6 +197,8 @@ public:
         assert(consensus.hashGenesisBlock == uint256S("00000006cf4c4e6177695242a1347023b7b1bdef8119237a11511b9e490bf8d9"));
         assert(genesis.hashMerkleRoot == uint256S("06c6c7131bc50a1fcab02107d0f24bcfe22c1808080074dcedf5fea412a0fe1c"));
 
+        altParams = std::make_shared<AltChainParamsVBTC>(genesis);
+
         vFixedSeeds.clear();
         vSeeds.clear();
 
@@ -206,7 +237,10 @@ public:
  */
 class CRegTestParams : public CChainParams {
 public:
-    explicit CRegTestParams(const ArgsManager& args) {
+    explicit CRegTestParams(const ArgsManager& args, std::shared_ptr<altintegration::BtcChainParams> btc, std::shared_ptr<altintegration::VbkChainParams> vbk) {
+        this->btcParams = btc;
+        this->vbkParams = vbk;
+
         strNetworkID =  CBaseChainParams::REGTEST;
         consensus.nSubsidyHalvingInterval = 150;
         consensus.BIP16Exception = uint256();
@@ -253,6 +287,8 @@ public:
         consensus.hashGenesisBlock = genesis.GetHash();
         assert(consensus.hashGenesisBlock == uint256S("55c49883fa107754db67455f30291935e4a4f6d8960b897098f027d5e62ce95c"));
         assert(genesis.hashMerkleRoot == uint256S("41159e19a678894968919c2c4250302d277074de5fda813002e43fe502bf6bed"));
+
+        altParams = std::make_shared<AltChainParamsVBTC>(genesis);
 
         vFixedSeeds.clear(); //!< Regtest mode doesn't have any fixed seeds.
         vSeeds.clear();      //!< Regtest mode doesn't have any DNS seeds.
@@ -342,20 +378,25 @@ const CChainParams &Params() {
     return *globalChainParams;
 }
 
-std::unique_ptr<const CChainParams> CreateChainParams(const std::string& chain)
+std::unique_ptr<const CChainParams> CreateChainParams(const std::string& chain, const std::string& btcnetwork, const std::string& vbknetwork)
 {
+    auto btc = altintegration::makeBtcNetwork(btcnetwork);
+    auto vbk = altintegration::makeVbkNetwork(vbknetwork);
+
     if (chain == CBaseChainParams::MAIN)
-        return std::unique_ptr<CChainParams>(new CMainParams());
+        return std::unique_ptr<CChainParams>(new CMainParams(btc, vbk));
     else if (chain == CBaseChainParams::TESTNET)
-        return std::unique_ptr<CChainParams>(new CTestNetParams());
+        return std::unique_ptr<CChainParams>(new CTestNetParams(btc, vbk));
     else if (chain == CBaseChainParams::REGTEST)
-        return std::unique_ptr<CChainParams>(new CRegTestParams(gArgs));
+        return std::unique_ptr<CChainParams>(new CRegTestParams(gArgs, btc, vbk));
     throw std::runtime_error(strprintf("%s: Unknown chain %s.", __func__, chain));
+
+    
 }
 
-void SelectParams(const std::string& network)
+void SelectParams(const std::string& network, const std::string& btcnetwork, const std::string& vbknetwork)
 {
     SelectBaseParams(network);
-    globalChainParams = CreateChainParams(network);
+    globalChainParams = CreateChainParams(network, btcnetwork, vbknetwork);
     assert(globalChainParams != nullptr);
 }
