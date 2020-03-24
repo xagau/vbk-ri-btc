@@ -55,6 +55,8 @@ const static std::string DATABASE_NAME = "alt-integration-db";
 
 PopServiceImpl::PopServiceImpl()
 {
+     // TODO use new interface of the alt-integration-lib
+    /*
     stateManager = std::make_shared<altintegration::StateManager<altintegration::RepositoryRocksManager>>(DATABASE_NAME);
 
     auto alt = altintegration::AltTree::init<altintegration::RepositoryRocksManager>(
@@ -64,11 +66,14 @@ PopServiceImpl::PopServiceImpl()
         Params().getVbkParams());
 
     altTree = std::make_shared<altintegration::AltTree>(std::move(alt));
+    */
 }
 
 bool PopServiceImpl::commitPayloads(const CBlockIndex& prev, const CBlock& connecting, TxValidationState& state)
 {
     std::lock_guard<std::mutex> lock(mutex);
+    // TODO use new interface of the alt-integration-lib
+    /*
     auto change = getStateManager().newChange();
     auto block = cast(prev.nHeight, connecting.GetBlockHeader());
 
@@ -81,6 +86,7 @@ bool PopServiceImpl::commitPayloads(const CBlockIndex& prev, const CBlock& conne
 
     getAltTree().currentPopManager().commit();
     change->commit();
+    */
 
     return true;
 }
@@ -88,22 +94,37 @@ bool PopServiceImpl::commitPayloads(const CBlockIndex& prev, const CBlock& conne
 bool PopServiceImpl::removePayloads(const CBlockIndex& connecting)
 {
     std::lock_guard<std::mutex> lock(mutex);
+    // TODO use new interface of the alt-integration-lib
+    /*
     altintegration::ValidationState instate;
     auto block = cast(connecting.nHeight, connecting.GetBlockHeader());
     return getAltTree().setState(block.previousBlock, instate);
+    */
+
+    return true;
 }
 
 
 std::vector<BlockBytes> PopServiceImpl::getLastKnownVBKBlocks(size_t blocks)
 {
     std::lock_guard<std::mutex> lock(mutex);
+    // TODO use new interface of the alt-integration-lib
+    /*
     return altintegration::getLastKnownBlocks(getAltTree().currentPopManager().vbk(), blocks);
+    */
+
+    return std::vector<BlockBytes>();
 }
 
 std::vector<BlockBytes> PopServiceImpl::getLastKnownBTCBlocks(size_t blocks)
 {
     std::lock_guard<std::mutex> lock(mutex);
+    // TODO use new interface of the alt-integration-lib
+    /*
     return altintegration::getLastKnownBlocks(getAltTree().currentPopManager().btc(), blocks);
+    */
+
+    return std::vector<BlockBytes>();
 }
 
 bool PopServiceImpl::checkVTBinternally(const std::vector<uint8_t>& bytes)
@@ -163,6 +184,8 @@ int PopServiceImpl::compareTwoBranches(const CBlockIndex* commonKeystone, const 
     //    }
     //
     //    return reply.compareresult();
+
+    return 0;
 }
 
 // Pop rewards
@@ -212,6 +235,8 @@ bool txPopValidation(PopServiceImpl& pop, const CBlock& block, const CTransactio
 
     switch (type) {
     case VeriBlock::PopTxType::CONTEXT: {
+        // TODO use new interface of the alt-integration-lib
+        /*
         payloads.alt.hasAtv = false;
         payloads.vtbs.clear();
 
@@ -243,10 +268,12 @@ bool txPopValidation(PopServiceImpl& pop, const CBlock& block, const CTransactio
                 "[" + tx.GetHash().ToString() + "] VBK context is invalid: " + e.what());
         }
 
-
+        */
         break;
     }
     case VeriBlock::PopTxType::PUBLICATIONS: {
+        // TODO use new interface of the alt-integration-lib
+        /*
         payloads.alt.atv = altintegration::ATV::fromVbkEncoding(publications.atv);
         payloads.alt.hasAtv = true;
         const altintegration::PublicationData& publicationData = payloads.alt.atv.transaction.publicationData;
@@ -302,7 +329,7 @@ bool txPopValidation(PopServiceImpl& pop, const CBlock& block, const CTransactio
                 "pop-tx-invalid-vtbs",
                 "[" + tx.GetHash().ToString() + "] parsing of VTB is invalid: " + e.what());
         }
-
+        */
         break;
     }
     default: {
@@ -323,6 +350,8 @@ bool blockPopValidationImpl(PopServiceImpl& pop, const CBlock& block, const CBlo
     AssertLockHeld(mempool.cs);
     AssertLockHeld(cs_main);
 
+    // TODO use new interface of the alt-integration-lib
+    /*
     return altintegration::tryValidateWithResources(
         [&]() -> bool {
             const auto& config = getService<Config>();
@@ -352,6 +381,8 @@ bool blockPopValidationImpl(PopServiceImpl& pop, const CBlock& block, const CBlo
             return true;
         },
         [&pop] { pop.getAltTree().currentPopManager().rollback(); });
+        */
+    return true;
 }
 
 bool PopServiceImpl::blockPopValidation(const CBlock& block, const CBlockIndex& pindexPrev, const Consensus::Params& params, BlockValidationState& state) EXCLUSIVE_LOCKS_REQUIRED(cs_main)

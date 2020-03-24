@@ -47,7 +47,7 @@ struct PopService {
 
     virtual bool commitPayloads(const CBlockIndex& blockIndex, const CBlock& block, TxValidationState& state) = 0;
 
-    virtual bool removePayloads(const CBlockIndex& block, TxValidationState& state) = 0;
+    virtual bool removePayloads(const CBlockIndex& block) = 0;
 };
 } // namespace VeriBlock
 

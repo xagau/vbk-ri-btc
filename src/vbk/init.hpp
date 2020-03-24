@@ -56,11 +56,12 @@ inline Config& InitConfig()
 
 inline PopService& InitPopService(std::string host, std::string port, bool altautoconfig)
 {
+    // TODO remove altautoconfig flag if we will not use it
     auto& config = getService<Config>();
     config.service_ip = std::move(host);
     config.service_port = std::move(port);
 
-    return detail::InitService<PopService, PopServiceImpl>(altautoconfig);
+    return detail::InitService<PopService, PopServiceImpl>();
 }
 
 

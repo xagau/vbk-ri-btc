@@ -426,8 +426,10 @@ void BlockAssembler::addPackageTxs(int &nPackagesSelected, int &nDescendantsUpda
             // contextual PoP validation
             assert(ancestors.size() == 1);
             TxValidationState txstate;
-            if (nPopTx < config.max_pop_tx_amount &&
-                !VeriBlock::getService<VeriBlock::PopService>().addTemporaryPayloads(iter->GetSharedTx(), *::ChainActive().Tip(), chainparams.GetConsensus(), txstate)) {
+
+            // TODO add payloads validation if it necessary
+            if (nPopTx < config.max_pop_tx_amount /*&&
+                !VeriBlock::getService<VeriBlock::PopService>().addTemporaryPayloads(iter->GetSharedTx(), *::ChainActive().Tip(), chainparams.GetConsensus(), txstate)*/) {
 
                 failedTx.insert(iter);
                 failedPopTx.insert(iter);

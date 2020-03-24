@@ -2623,7 +2623,8 @@ bool CChainState::ConnectTip(BlockValidationState& state, const CChainParams& ch
     mempool.removeForBlock(blockConnecting.vtx, pindexNew->nHeight);
     disconnectpool.removeForBlock(blockConnecting.vtx);
 
-    VeriBlock::getService<VeriBlock::PopService>().addPayloads(*pindexNew, blockConnecting);
+    // TODO add validation if it necessary
+    //VeriBlock::getService<VeriBlock::PopService>().addPayloads(*pindexNew, blockConnecting);
 
     // Update m_chain & related variables.
     m_chain.SetTip(pindexNew);
@@ -3720,7 +3721,9 @@ static FlatFilePos SaveBlockToDisk(const CBlock& block, int nHeight, const CChai
             return FlatFilePos();
         }
     }
-    VeriBlock::getService<VeriBlock::PopService>().savePopTxToDatabase(block, nHeight);
+
+    // TODO save payloads on disk if it necessary
+    //VeriBlock::getService<VeriBlock::PopService>().savePopTxToDatabase(block, nHeight);
     return blockPos;
 }
 

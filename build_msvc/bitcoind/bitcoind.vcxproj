@@ -51,9 +51,6 @@
     <ConfigIniIn>..\..\test\config.ini.in</ConfigIniIn>
     <ConfigIniOut>..\..\test\config.ini</ConfigIniOut>
   </PropertyGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <ClCompile />
-  </ItemDefinitionGroup>
   <Target Name="AfterBuild">
     <Copy SourceFiles="$(ConfigIniIn)" DestinationFiles="$(ConfigIniOut)">
     </Copy>

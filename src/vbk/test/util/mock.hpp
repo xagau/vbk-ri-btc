@@ -10,7 +10,6 @@
 #include <vbk/util_service.hpp>
 #include <vbk/util_service/util_service_impl.hpp>
 #include <vbk/pop_service/pop_service_impl.hpp>
-#include <vbk/pop_service/integration.grpc.pb.h>
 
 #include <gmock/gmock.h>
 
@@ -36,7 +35,7 @@ public:
       (const CBlock& block, const CBlockIndex& pindexPrev, const Consensus::Params& params,
         BlockValidationState& state), ());
     MOCK_METHOD(void, getPublicationsData,
-      (const VeriBlock::Publications& data, VeriBlock::PublicationData& pub), ());
+      (const VeriBlock::Publications& data, altintegration::PublicationData& pub), ());
     MOCK_METHOD(void, updateContext,
       (const std::vector<std::vector<uint8_t>>& veriBlockBlocks,
         const std::vector<std::vector<uint8_t>>& bitcoinBlocks), ());
@@ -46,15 +45,8 @@ public:
     MOCK_METHOD(bool, determineATVPlausibilityWithBTCRules,
       (VeriBlock::AltchainId altChainIdentifier, const CBlockHeader& popEndorsementHeader,
         const Consensus::Params& params, TxValidationState& state), ());
-    MOCK_METHOD(void, addPayloads,
-      (std::string blockHash, const int& nHeight, const VeriBlock::Publications& publications), ());
-    MOCK_METHOD(void, addPayloads, (const CBlockIndex& blockIndex, const CBlock& block), ());
+    MOCK_METHOD(void, commitPayloads, (const CBlockIndex& blockIndex, const CBlock& block, TxValidationState& state), ());
     MOCK_METHOD(void, removePayloads, (std::string blockHash, const int& blockHeight), ());
-    MOCK_METHOD(void, removePayloads, (const CBlockIndex& blockIndex), ());
-    MOCK_METHOD(bool, addTemporaryPayloads,
-      (const CTransactionRef& tx, const CBlockIndex& pindexPrev, const Consensus::Params& params,
-        TxValidationState& state), ());
-    MOCK_METHOD(void, clearTemporaryPayloads, (), ());
     MOCK_METHOD(void, setConfig, (), ());
 };
 

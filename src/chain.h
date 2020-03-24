@@ -192,11 +192,6 @@ public:
     //! (memory only) Maximum nTime in the chain up to and including this block.
     unsigned int nTimeMax{0};
 
-    // payloads id
-    using pid = altintegration::uint256;
-    //! (memory only) list of payloads in this block
-    std::vector<pid> payloads;
-
     CBlockIndex()
     {
     }

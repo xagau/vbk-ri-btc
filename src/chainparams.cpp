@@ -20,7 +20,7 @@
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
 
-#include <veriblock/params.hpp>
+#include <veriblock/blockchain/alt_chain_params.hpp>
 
 
 struct AltChainParamsVBTC : public altintegration::AltChainParams {
@@ -33,7 +33,7 @@ struct AltChainParamsVBTC : public altintegration::AltChainParams {
       bootstrap.timestamp = genesis.GetBlockTime();
   }
 
-  altintegration::AltBlock getBootstrapBlock() const noexcept {
+  altintegration::AltBlock getGenesisBlock() const noexcept override {
     return bootstrap;
   }
 
@@ -378,10 +378,13 @@ const CChainParams &Params() {
     return *globalChainParams;
 }
 
-std::unique_ptr<const CChainParams> CreateChainParams(const std::string& chain, const std::string& btcnetwork, const std::string& vbknetwork)
+std::unique_ptr<const CChainParams> CreateChainParams(const std::string& chain)
 {
-    auto btc = altintegration::makeBtcNetwork(btcnetwork);
-    auto vbk = altintegration::makeVbkNetwork(vbknetwork);
+    // TODO use new interface of the alt-integration-lib
+    // auto btc = altintegration::makeBtcNetwork(btcnetwork);
+    // auto vbk = altintegration::makeVbkNetwork(vbknetwork);
+    std::shared_ptr<altintegration::BtcChainParams> btc = nullptr;
+    std::shared_ptr<altintegration::VbkChainParams> vbk = nullptr;
 
     if (chain == CBaseChainParams::MAIN)
         return std::unique_ptr<CChainParams>(new CMainParams(btc, vbk));
@@ -394,9 +397,9 @@ std::unique_ptr<const CChainParams> CreateChainParams(const std::string& chain, 
     
 }
 
-void SelectParams(const std::string& network, const std::string& btcnetwork, const std::string& vbknetwork)
+void SelectParams(const std::string& network)
 {
     SelectBaseParams(network);
-    globalChainParams = CreateChainParams(network, btcnetwork, vbknetwork);
+    globalChainParams = CreateChainParams(network);
     assert(globalChainParams != nullptr);
 }
