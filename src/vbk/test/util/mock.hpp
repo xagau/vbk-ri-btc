@@ -20,7 +20,6 @@ using ::testing::Return;
 class PopServiceMock : public ::testing::NiceMock<VeriBlock::PopService>
 {
 public:
-    MOCK_METHOD(void, savePopTxToDatabase, (const CBlock& block, const int& nHeight), ());
     MOCK_METHOD(std::vector<VeriBlock::BlockBytes>, getLastKnownVBKBlocks, (size_t blocks), ());
     MOCK_METHOD(std::vector<VeriBlock::BlockBytes>, getLastKnownBTCBlocks, (size_t blocks), ());
     MOCK_METHOD(bool, checkVTBinternally, (const std::vector<uint8_t>& bytes), ());
@@ -34,20 +33,11 @@ public:
     MOCK_METHOD(bool, blockPopValidation,
       (const CBlock& block, const CBlockIndex& pindexPrev, const Consensus::Params& params,
         BlockValidationState& state), ());
-    MOCK_METHOD(void, getPublicationsData,
-      (const VeriBlock::Publications& data, altintegration::PublicationData& pub), ());
-    MOCK_METHOD(void, updateContext,
-      (const std::vector<std::vector<uint8_t>>& veriBlockBlocks,
-        const std::vector<std::vector<uint8_t>>& bitcoinBlocks), ());
-    MOCK_METHOD(bool, parsePopTx,
-      (const CTransactionRef& tx, ScriptError* serror, VeriBlock::Publications* publications,
-        VeriBlock::Context* ctx, VeriBlock::PopTxType* type), ());
     MOCK_METHOD(bool, determineATVPlausibilityWithBTCRules,
       (VeriBlock::AltchainId altChainIdentifier, const CBlockHeader& popEndorsementHeader,
         const Consensus::Params& params, TxValidationState& state), ());
-    MOCK_METHOD(void, commitPayloads, (const CBlockIndex& blockIndex, const CBlock& block, TxValidationState& state), ());
-    MOCK_METHOD(void, removePayloads, (std::string blockHash, const int& blockHeight), ());
-    MOCK_METHOD(void, setConfig, (), ());
+    MOCK_METHOD(bool, commitPayloads, (const CBlockIndex& blockIndex, const CBlock& block, TxValidationState& state), ());
+    MOCK_METHOD(bool, removePayloads, (const CBlockIndex& block), ());
 };
 
 class UtilServiceMock : public ::testing::NiceMock<VeriBlock::UtilService>
@@ -80,27 +70,15 @@ public:
 class PopServiceImplMock : public VeriBlock::PopServiceImpl
 {
 public:
-    PopServiceImplMock() : VeriBlock::PopServiceImpl(false, false) {}
+    PopServiceImplMock() : VeriBlock::PopServiceImpl() {}
 
-    MOCK_METHOD(void, getPublicationsData,
-      (const VeriBlock::Publications& data, VeriBlock::PublicationData& pub), (override));
-    MOCK_METHOD(void, updateContext,
-      (const std::vector<std::vector<uint8_t>>& veriBlockBlocks,
-        const std::vector<std::vector<uint8_t>>& bitcoinBlocks), (override));
-    MOCK_METHOD(bool, parsePopTx,
-      (const CTransactionRef& tx, ScriptError* serror, VeriBlock::Publications* publications,
-        VeriBlock::Context* ctx, VeriBlock::PopTxType* type), (override));
     MOCK_METHOD(bool, determineATVPlausibilityWithBTCRules,
       (VeriBlock::AltchainId altChainIdentifier, const CBlockHeader& popEndorsementHeader,
         const Consensus::Params& params, TxValidationState& state), (override));
-    MOCK_METHOD(void, addPayloads,
-      (std::string blockHash, const int& nHeight, const VeriBlock::Publications& publications), (override));
-    MOCK_METHOD(void, removePayloads,
-      (std::string blockHash, const int& blockHeight), (override));
-    MOCK_METHOD(bool, addTemporaryPayloads,
-      (const CTransactionRef& tx, const CBlockIndex& pindexPrev, const Consensus::Params& params,
-        TxValidationState& state), (override));
-    MOCK_METHOD(void, clearTemporaryPayloads, (), (override));
+    MOCK_METHOD(bool, commitPayloads,
+      (const CBlockIndex& prev, const CBlock& connecting, TxValidationState& state), (override));
+    MOCK_METHOD(bool, removePayloads,
+      (const CBlockIndex& block), (override));
 };
 
 template <typename T>
@@ -117,7 +95,6 @@ inline void setUpPopServiceMock(PopServiceMock& mock)
     ON_CALL(mock, getLastKnownVBKBlocks).WillByDefault(Return(std::vector<VeriBlock::BlockBytes>()));
     ON_CALL(mock, getLastKnownBTCBlocks).WillByDefault(Return(std::vector<VeriBlock::BlockBytes>()));
     ON_CALL(mock, blockPopValidation).WillByDefault(Return(true));
-    ON_CALL(mock, addTemporaryPayloads).WillByDefault(Return(true));
 
     setServiceMock<VeriBlock::PopService>(mock);
 }

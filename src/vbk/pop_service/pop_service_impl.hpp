@@ -52,8 +52,6 @@ public:
 
     bool blockPopValidation(const CBlock& block, const CBlockIndex& pindexPrev, const Consensus::Params& params, BlockValidationState& state) override;
 
-    bool parsePopTx(const CTransactionRef& tx, ScriptError* serror, Publications* publications, Context* ctx, PopTxType* type) override;
-
     bool determineATVPlausibilityWithBTCRules(AltchainId altChainIdentifier, const CBlockHeader& popEndorsementHeader, const Consensus::Params& params, TxValidationState& state) override;
 
     bool commitPayloads(const CBlockIndex& prev, const CBlock& connecting, TxValidationState& state) override;

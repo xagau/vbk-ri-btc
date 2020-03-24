@@ -41,8 +41,6 @@ struct PopService {
 
     virtual bool blockPopValidation(const CBlock& block, const CBlockIndex& pindexPrev, const Consensus::Params& params, BlockValidationState& state) = 0;
 
-    virtual bool parsePopTx(const CTransactionRef& tx, ScriptError* serror, Publications* publications, Context* ctx, PopTxType* type) = 0;
-
     virtual bool determineATVPlausibilityWithBTCRules(AltchainId altChainIdentifier, const CBlockHeader& popEndorsementHeader, const Consensus::Params& params, TxValidationState& state) = 0;
 
     virtual bool commitPayloads(const CBlockIndex& blockIndex, const CBlock& block, TxValidationState& state) = 0;
