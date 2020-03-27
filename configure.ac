@@ -1254,6 +1254,7 @@ if test x$use_pkgconfig = xyes; then
       PKG_CHECK_MODULES([GRPC], [grpc++ protobuf],, [AC_MSG_ERROR(grpc++/protobuf not found.)])
       PKG_CHECK_MODULES([SSL], [libssl],, [AC_MSG_ERROR(openssl not found.)])
       PKG_CHECK_MODULES([CRYPTO], [libcrypto],,[AC_MSG_ERROR(libcrypto not found.)])
+      PKG_CHECK_MODULES([ALT_INT], [altintegration],,[AC_MSG_ERROR(altintegration not found.)])
       if test x$use_tests != xno; then
         PKG_CHECK_MODULES([GMOCK], [gmock],,[AC_MSG_ERROR(gmock not found.)])
       fi
