@@ -1295,6 +1295,7 @@ else
   AC_CHECK_LIB([crypto],[main],[GRPC_LIBS+=" -lcrypto"],AC_MSG_ERROR(crypto missing))
   AC_CHECK_LIB([protobuf],[main],[GRPC_LIBS+=" -lprotobuf"],AC_MSG_ERROR(protobuf missing))
   AC_CHECK_LIB([address_sorting],[main],[GRPC_LIBS+=" -laddress_sorting"],AC_MSG_ERROR(protobuf missing))
+  AC_CHECK_LIB([altintegration],[main],[ALT_INT_LIBS+=" -laltintegration"],AC_MSG_ERROR(altintegration missing))
 
   if test x$use_tests != xno; then
     AC_CHECK_HEADER([gmock/gmock.h],,AC_MSG_ERROR(libgmock headers missing))
