@@ -138,6 +138,16 @@ RUN git clone --progress -b v1.26.x http://github.com/grpc/grpc/ && \
     ) && \
     rm -rf grpc
 
+RUN git clone --progress https://github.com/VeriBlock/alt-integration-cpp.git && \
+    ( \
+      cd alt-integration-cpp; \
+      mkdir build; \
+      cd build; \
+      cmake .. -DCMAKE_BUILD_TYPE=Release; \
+      make -j4 install; \
+    ) && \
+    rm -rf alt-integration-cpp
+
 RUN git clone --progress -b release-1.10.0 https://github.com/google/googletest.git && \
     ( \
       cd googletest; \
