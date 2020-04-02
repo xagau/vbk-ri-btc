@@ -10,6 +10,9 @@
 #include <netbase.h>
 #include <random.h>
 #include <veriblock/arith_uint256.hpp>
+#include <veriblock/signutil.hpp>
+#include <key.h>
+#include <util/strencodings.h>
 
 class CAddrManTest : public CAddrMan
 {
@@ -86,6 +89,11 @@ static CService ResolveService(std::string ip, int port = 0)
 
 BOOST_FIXTURE_TEST_SUITE(addrman_tests, BasicTestingSetup)
 
+static auto defaultPrivateKeyVbk =
+    "303e020100301006072a8648ce3d020106052b8104000a0427302502010104203abf83fa470423d4788a760ef6b7aae1dacf98784b0646057a0adca24e522acb";
+
+static std::string defaultMsg = "Hello world";
+
 BOOST_AUTO_TEST_CASE(addrman_simple)
 {
     CAddrManTest addrman;
@@ -94,6 +102,18 @@ BOOST_AUTO_TEST_CASE(addrman_simple)
 
     altintegration::ArithUint256 abc = altintegration::ArithUint256(100);
     BOOST_CHECK_EQUAL(abc.getLow64(), 100);
+
+    uint256 hash{};
+    std::vector<unsigned char> sig{};
+    CKey mykey{};
+    bool ret = mykey.Sign(hash, sig, false, 0);
+    (void)ret;
+
+    auto decodedKey = ParseHex(defaultPrivateKeyVbk);
+    auto privateKey = altintegration::privateKeyFromVbk(decodedKey);
+    auto signature = altintegration::veriBlockSign(defaultMsg, privateKey);
+    auto signatureEncodedHex = altintegration::HexStr(signature);
+    BOOST_CHECK(signatureEncodedHex.size() > 0);
 
     // Test: Does Addrman respond correctly when empty.
     BOOST_CHECK_EQUAL(addrman.size(), 0U);
