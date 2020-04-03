@@ -158,7 +158,7 @@ BOOST_AUTO_TEST_CASE(addrman_simple)
     BOOST_CHECK(addrman.size() >= 1);
 }
 
-/*BOOST_AUTO_TEST_CASE(addrman_ports)
+BOOST_AUTO_TEST_CASE(addrman_ports)
 {
     CAddrManTest addrman;
 
@@ -693,7 +693,6 @@ BOOST_AUTO_TEST_CASE(addrman_evictionworks)
 
     addrman.ResolveCollisions();
     BOOST_CHECK(addrman.SelectTriedCollision().ToString() == "[::]:0");
-}*/
-
+}
 
 BOOST_AUTO_TEST_SUITE_END()

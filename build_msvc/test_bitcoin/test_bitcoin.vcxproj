@@ -23,7 +23,6 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile />
-    <ClCompile />
     <Link />
   </ItemDefinitionGroup>
   <ItemGroup>
