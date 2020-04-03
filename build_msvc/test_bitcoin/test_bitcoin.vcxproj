@@ -24,9 +24,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile />
     <ClCompile />
-    <Link>
-      <AdditionalDependencies>F:\programming\VeriBlock\alt-integration-cpp\build\lib\Debug\altintegration.lib;%(AdditionalDependencies)</AdditionalDependencies>
-    </Link>
+    <Link />
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\..\src\test\*_properties.cpp" />
