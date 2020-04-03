@@ -141,6 +141,7 @@ RUN git clone --progress -b v1.26.x http://github.com/grpc/grpc/ && \
 RUN git clone --progress https://github.com/VeriBlock/alt-integration-cpp.git && \
     ( \
       cd alt-integration-cpp; \
+      git submodule update --init --recursive; \
       mkdir build; \
       cd build; \
       cmake .. -DCMAKE_BUILD_TYPE=Release; \
