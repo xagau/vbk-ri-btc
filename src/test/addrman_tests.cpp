@@ -85,11 +85,6 @@ static CService ResolveService(std::string ip, int port = 0)
 
 BOOST_FIXTURE_TEST_SUITE(addrman_tests, BasicTestingSetup)
 
-static auto defaultPrivateKeyVbk =
-    "303e020100301006072a8648ce3d020106052b8104000a0427302502010104203abf83fa470423d4788a760ef6b7aae1dacf98784b0646057a0adca24e522acb";
-
-static std::string defaultMsg = "Hello world";
-
 BOOST_AUTO_TEST_CASE(addrman_simple)
 {
     CAddrManTest addrman;
