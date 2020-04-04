@@ -9,10 +9,6 @@
 #include <hash.h>
 #include <netbase.h>
 #include <random.h>
-#include <veriblock/arith_uint256.hpp>
-#include <veriblock/signutil.hpp>
-#include <key.h>
-#include <util/strencodings.h>
 
 class CAddrManTest : public CAddrMan
 {
@@ -99,21 +95,6 @@ BOOST_AUTO_TEST_CASE(addrman_simple)
     CAddrManTest addrman;
 
     CNetAddr source = ResolveIP("252.2.2.2");
-
-    altintegration::ArithUint256 abc = altintegration::ArithUint256(100);
-    BOOST_CHECK_EQUAL(abc.getLow64(), 100);
-
-    uint256 hash{};
-    std::vector<unsigned char> sig{};
-    CKey mykey{};
-    bool ret = mykey.Sign(hash, sig, false, 0);
-    (void)ret;
-
-    auto decodedKey = ParseHex(defaultPrivateKeyVbk);
-    auto privateKey = altintegration::privateKeyFromVbk(decodedKey);
-    auto signature = altintegration::veriBlockSign(defaultMsg, privateKey);
-    auto signatureEncodedHex = altintegration::HexStr(signature);
-    BOOST_CHECK(signatureEncodedHex.size() > 0);
 
     // Test: Does Addrman respond correctly when empty.
     BOOST_CHECK_EQUAL(addrman.size(), 0U);
