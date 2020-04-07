@@ -186,12 +186,13 @@ enum opcodetype
     OP_NOP8 = 0xb7,
     OP_NOP9 = 0xb8,
     OP_NOP10 = 0xb9,
+    // VBK
     OP_CHECKATV = 0xba,
     OP_CHECKVTB = 0xbb,
     OP_CHECKPOP = 0xbc,
     OP_POPBTCHEADER = 0xbd,
     OP_POPVBKHEADER = 0xbe,
-
+    // VBK
     OP_INVALIDOPCODE = 0xff,
 };
 
